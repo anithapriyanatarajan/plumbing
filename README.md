@@ -29,4 +29,4 @@ via the `#plumbing` channel.
 [have access to the underlying resources](https://github.com/tektoncd/community/blob/main/governance.md#permissions-and-access).
 
 ## Text to test ci
-## REtest
+## Remove additional text
