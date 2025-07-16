@@ -1,0 +1,231 @@
+name: Nightly Plumbing Components Release
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # Daily at 1am UTC
+  workflow_dispatch:
+    inputs:
+      components:
+        description: 'Components to release (comma-separated or "all")'
+        required: false
+        type: string
+        default: 'all'
+      run-tests:
+        description: 'Run tests during release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+  packages: write
+
+jobs:
+  # Matrix strategy for parallel component builds
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.components.outputs.list }}
+    steps:
+      - name: Determine components to build
+        id: components
+        run: |
+          if [[ "${{ inputs.components }}" == "all" || "${{ inputs.components }}" == "" ]]; then
+            echo 'list=["add-pr-body", "add-pr-body-ci", "add-team-members", "pr-commenter", "pr-status-updater"]' >> $GITHUB_OUTPUT
+          else
+            # Convert comma-separated list to JSON array
+            IFS=',' read -ra ADDR <<< "${{ inputs.components }}"
+            JSON_ARRAY="["
+            for i in "${ADDR[@]}"; do
+              JSON_ARRAY="$JSON_ARRAY\"$(echo $i | xargs)\","
+            done
+            JSON_ARRAY="${JSON_ARRAY%,}]"
+            echo "list=$JSON_ARRAY" >> $GITHUB_OUTPUT
+          fi
+
+  release-components:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        component: ${{ fromJson(needs.setup.outputs.components) }}
+      fail-fast: false
+    
+    steps:
+      - name: Checkout plumbing
+        uses: actions/checkout@v4
+        
+      - name: Setup Tekton cluster
+        id: tekton
+        uses: ./.github/actions/setup-tekton
+        with:
+          kubernetes-version: 'v1.28.x'
+          enable-chains: 'true'
+          
+      - name: Generate release metadata
+        id: metadata
+        run: |
+          GIT_SHA=$(git rev-parse HEAD)
+          VERSION_TAG="v$(date +"%Y%m%d")-$(echo $GIT_SHA | cut -c 1-10)"
+          TRIGGER_UUID=$(python -c 'import uuid; print(uuid.uuid4())')
+          
+          echo "git-sha=$GIT_SHA" >> $GITHUB_OUTPUT
+          echo "version-tag=$VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "trigger-uuid=$TRIGGER_UUID" >> $GITHUB_OUTPUT
+          
+      - name: Map component to details
+        id: component-details
+        run: |
+          case "${{ matrix.component }}" in
+            "add-pr-body")
+              echo "path=tekton/ci/interceptors/add-pr-body" >> $GITHUB_OUTPUT
+              echo "registry-path=tektoncd/plumbing/interceptors/add-pr-body" >> $GITHUB_OUTPUT
+              ;;
+            "add-pr-body-ci")
+              echo "path=tekton/ci/cluster-interceptors/add-pr-body" >> $GITHUB_OUTPUT
+              echo "registry-path=tektoncd/plumbing/cluster-interceptors/add-pr-body" >> $GITHUB_OUTPUT
+              ;;
+            "add-team-members")
+              echo "path=tekton/ci/interceptors/add-team-members" >> $GITHUB_OUTPUT
+              echo "registry-path=tektoncd/plumbing/interceptors/add-team-members" >> $GITHUB_OUTPUT
+              ;;
+            "pr-commenter")
+              echo "path=tekton/ci/custom-tasks/pr-commenter" >> $GITHUB_OUTPUT
+              echo "registry-path=tektoncd/plumbing/custom-tasks/pr-commenter" >> $GITHUB_OUTPUT
+              ;;
+            "pr-status-updater")
+              echo "path=tekton/ci/custom-tasks/pr-status-updater" >> $GITHUB_OUTPUT
+              echo "registry-path=tektoncd/plumbing/custom-tasks/pr-status-updater" >> $GITHUB_OUTPUT
+              ;;
+          esac
+          
+      - name: Setup release resources
+        run: |
+          # Apply the nightly release templates for plumbing components
+          kubectl apply -k tekton/resources/nightly-release/overlays/${{ matrix.component }}
+          
+          # Wait for EventListener to be ready
+          kubectl wait --for=condition=Ready --timeout=300s \
+            pods -l app.kubernetes.io/name=el-${{ matrix.component }}-nightly -n tekton-nightly || \
+            kubectl wait --for=condition=Ready --timeout=300s \
+              pods -l app.kubernetes.io/name=el-tekton-nightly -n tekton-nightly
+            
+      - name: Create release secrets
+        run: |
+          # Create minimal release secret for this ephemeral cluster
+          kubectl create secret generic release-secret -n tekton-nightly \
+            --from-literal=release.json='{"type":"service_account"}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+            
+          # Create registry credentials  
+          kubectl create secret generic ghcr-creds -n tekton-nightly \
+            --from-literal=.dockerconfigjson='{"auths":{"ghcr.io":{"auth":""}}}' \
+            --type=kubernetes.io/dockerconfigjson \
+            --dry-run=client -o yaml | kubectl apply -f -
+            
+      - name: Trigger release pipeline
+        id: release
+        run: |
+          # Get EventListener service URL
+          EL_URL=$(kubectl get svc -n tekton-nightly -l app.kubernetes.io/name=el-tekton-nightly -o jsonpath='{.items[0].spec.clusterIP}'):8080
+          
+          # Create release payload
+          cat <<EOF > release-payload.json
+          {
+            "buildUUID": "${{ steps.metadata.outputs.trigger-uuid }}",
+            "trigger-template": "nightly-release",
+            "params": {
+              "release": {
+                "gitRevision": "${{ steps.metadata.outputs.git-sha }}",
+                "gitRepository": "github.com/tektoncd/plumbing",
+                "versionTag": "${{ steps.metadata.outputs.version-tag }}",
+                "projectName": "${{ matrix.component }}",
+                "runTests": "${{ inputs.run-tests }}"
+              },
+              "registry": {
+                "baseUri": "ghcr.io",
+                "path": "${{ steps.component-details.outputs.registry-path }}",
+                "regions": "",
+                "user": "token"
+              }
+            }
+          }
+          EOF
+          
+          # Port-forward to EventListener and trigger release
+          kubectl port-forward -n tekton-nightly svc/el-tekton-nightly 8080:8080 &
+          sleep 5
+          
+          PIPELINE_RUN=$(curl -s -X POST http://localhost:8080 \
+            -H "Content-Type: application/json" \
+            -d @release-payload.json | jq -r '.metadata.name // empty')
+            
+          if [ -z "$PIPELINE_RUN" ]; then
+            echo "Failed to trigger pipeline"
+            exit 1
+          fi
+          
+          echo "pipeline-run=$PIPELINE_RUN" >> $GITHUB_OUTPUT
+          echo "Triggered pipeline run: $PIPELINE_RUN"
+          
+      - name: Wait for release completion
+        run: |
+          PIPELINE_RUN="${{ steps.release.outputs.pipeline-run }}"
+          
+          echo "Waiting for pipeline run $PIPELINE_RUN to complete..."
+          kubectl wait --for=condition=Succeeded --timeout=3600s \
+            pipelinerun/$PIPELINE_RUN -n tekton-nightly || \
+          kubectl wait --for=condition=Failed --timeout=60s \
+            pipelinerun/$PIPELINE_RUN -n tekton-nightly
+            
+          # Check final status
+          STATUS=$(kubectl get pipelinerun/$PIPELINE_RUN -n tekton-nightly -o jsonpath='{.status.conditions[0].type}')
+          if [ "$STATUS" != "Succeeded" ]; then
+            echo "Pipeline run failed!"
+            kubectl describe pipelinerun/$PIPELINE_RUN -n tekton-nightly
+            exit 1
+          fi
+          
+          echo "Pipeline run completed successfully!"
+          
+      - name: Collect artifacts and logs
+        if: always()
+        run: |
+          # Create artifacts directory
+          mkdir -p artifacts/${{ matrix.component }}
+          
+          # Collect pipeline run logs
+          kubectl logs -l tekton.dev/pipelineRun=${{ steps.release.outputs.pipeline-run }} \
+            -n tekton-nightly --all-containers=true > artifacts/${{ matrix.component }}/pipeline-logs.txt || true
+          
+          # Collect release information
+          echo "Component: ${{ matrix.component }}" > artifacts/${{ matrix.component }}/release-info.txt
+          echo "Version: ${{ steps.metadata.outputs.version-tag }}" >> artifacts/${{ matrix.component }}/release-info.txt
+          echo "Git SHA: ${{ steps.metadata.outputs.git-sha }}" >> artifacts/${{ matrix.component }}/release-info.txt
+          echo "Registry Path: ghcr.io/${{ steps.component-details.outputs.registry-path }}" >> artifacts/${{ matrix.component }}/release-info.txt
+          
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ matrix.component }}
+          path: artifacts/${{ matrix.component }}/
+          retention-days: 30
+
+  summary:
+    needs: [setup, release-components]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Release Summary
+        run: |
+          echo "## 🚀 Nightly Plumbing Components Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Released Components:** ${{ join(fromJson(needs.setup.outputs.components), ', ') }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ needs.release-components.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Container Images" >> $GITHUB_STEP_SUMMARY
+          echo "All images published to \`ghcr.io/tektoncd/plumbing/\`" >> $GITHUB_STEP_SUMMARY 

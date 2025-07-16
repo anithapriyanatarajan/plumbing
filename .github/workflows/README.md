@@ -35,6 +35,15 @@ graph TB
    - `nightly-triggers.yml` - Tekton Triggers releases  
    - `nightly-dashboard.yml` - Tekton Dashboard releases
    - `nightly-chains.yml` - Tekton Chains releases
+   - `nightly-operator.yml` - Tekton Operator releases
+
+4. **Plumbing Component Workflow**
+   - `nightly-plumbing-components.yml` - All plumbing-specific components
+     - add-pr-body interceptor
+     - add-pr-body-ci cluster interceptor
+     - add-team-members interceptor
+     - pr-commenter custom task
+     - pr-status-updater custom task
 
 ## Features
 
@@ -49,132 +58,79 @@ graph TB
 - **Execution History** - Stored in GitHub Actions logs
 - **Manual Triggers** - Workflow dispatch for testing
 - **Parallel Execution** - No shared cluster contention
-- **Cost Effective** - No persistent infrastructure
 
-### ⚠️ Trade-offs
-- **Cold Start Overhead** - ~5-10 minutes to setup cluster
-- **Resource Limits** - Constrained by GitHub runner limits
-- **Log Storage** - Limited to GitHub's retention policies
+## Complete Coverage
+
+### Tekton Core Projects
+| Project | Workflow | Schedule | Status |
+|---------|----------|----------|--------|
+| Pipeline | `nightly-pipeline.yml` | 5am UTC | ✅ |
+| Triggers | `nightly-triggers.yml` | 6am UTC | ✅ |
+| Dashboard | `nightly-dashboard.yml` | 7am UTC | ✅ |
+| Chains | `nightly-chains.yml` | 8am UTC | ✅ |
+| Operator | `nightly-operator.yml` | 4am UTC | ✅ |
+
+### Plumbing Components
+| Component | Path | Registry Path | Status |
+|-----------|------|---------------|--------|
+| add-pr-body | `tekton/ci/interceptors/add-pr-body` | `tektoncd/plumbing/interceptors/add-pr-body` | ✅ |
+| add-pr-body-ci | `tekton/ci/cluster-interceptors/add-pr-body` | `tektoncd/plumbing/cluster-interceptors/add-pr-body` | ✅ |
+| add-team-members | `tekton/ci/interceptors/add-team-members` | `tektoncd/plumbing/interceptors/add-team-members` | ✅ |
+| pr-commenter | `tekton/ci/custom-tasks/pr-commenter` | `tektoncd/plumbing/custom-tasks/pr-commenter` | ✅ |
+| pr-status-updater | `tekton/ci/custom-tasks/pr-status-updater` | `tektoncd/plumbing/custom-tasks/pr-status-updater` | ✅ |
+
+All components are built in parallel via matrix strategy in `nightly-plumbing-components.yml` at 1am UTC.
 
 ## Usage
 
-### Automatic Execution
-Workflows run automatically on their configured schedules:
-- Pipeline: Daily at 5am UTC
-- Triggers: Daily at 6am UTC  
-- Dashboard: Daily at 7am UTC
-- Chains: Daily at 8am UTC
+### Automatic Releases
+All workflows run automatically on their scheduled times.
 
-### Manual Execution
-Trigger releases manually via GitHub UI:
-1. Go to Actions tab
-2. Select the desired nightly workflow
-3. Click "Run workflow"
-4. Optionally enable tests
-
-### Monitoring
-- **GitHub Actions UI** - Real-time execution status
-- **Workflow Summaries** - High-level results and artifacts
-- **Artifact Downloads** - Logs and pipeline outputs
-
-## Signing and Attestations
-
-### Tekton Chains Signing
-- Uses GitHub OIDC tokens for keyless signing
-- Integrates with public Sigstore/Rekor
-- Maintains compatibility with existing verification tools
-
-### GitHub Attestations  
-- Native build provenance for containers
-- SLSA-compliant attestation format
-- Verifiable with `gh attestation verify`
-
-## Migration Status
-
-### ✅ Completed
-- [x] Setup automation for Kind + Tekton
-- [x] Reusable workflow template
-- [x] Pipeline, Triggers, Dashboard, Chains workflows
-- [x] Artifact collection and history
-- [x] Documentation
-
-### 🚧 Next Steps
-1. **Add remaining projects** (operator, add-pr-body, etc.)
-2. **Test with real releases** and validate output
-3. **Disable Azure cronjobs** once validated
-4. **Monitor and optimize** performance
-
-### 📋 Validation Checklist
-- [ ] Pipeline release produces correct artifacts
-- [ ] Chains signing works with GitHub OIDC
-- [ ] Attestations are properly generated
-- [ ] Logs are collected and accessible
-- [ ] Manual triggers work correctly
-
-## Troubleshooting
-
-### Common Issues
-
-**Cluster Setup Fails**
+### Manual Testing
 ```bash
-# Check Docker daemon status
-docker ps
+# Test individual Tekton project
+gh workflow run nightly-pipeline.yml -f run-tests=false
 
-# Verify Kind installation
-kind version
+# Test specific plumbing components
+gh workflow run nightly-plumbing-components.yml -f components="add-pr-body,pr-commenter"
+
+# Test all plumbing components
+gh workflow run nightly-plumbing-components.yml -f components="all"
 ```
 
-**Pipeline Doesn't Trigger**
-```bash
-# Check EventListener status
-kubectl get pods -n tekton-nightly -l app.kubernetes.io/name=el-pipeline-nightly
+### Fork Testing
+For testing in your fork:
+1. Enable GitHub Actions in repository settings
+2. Update container registry paths in workflows
+3. Set up necessary secrets (if needed)
 
-# Verify port-forward
-kubectl port-forward -n tekton-nightly svc/el-pipeline-nightly 8080:8080
-```
+## Migration from Traditional Cronjobs
 
-**Missing Artifacts**
-```bash
-# Check PipelineRun status
-kubectl get pipelinerun -n tekton-nightly
+### Advantages
+- **Cost Efficiency**: No persistent cluster costs
+- **Enhanced Security**: OIDC authentication, artifact attestations
+- **Better Observability**: GitHub Actions logs and artifact management
+- **Parallel Execution**: No resource contention between releases
+- **Zero Maintenance**: No cluster upgrades or secret rotation
 
-# View detailed events
-kubectl describe pipelinerun/PIPELINE_RUN_NAME -n tekton-nightly
-```
+### Equivalency Mapping
+| Traditional Cronjob | GitHub Actions Workflow |
+|---------------------|-------------------------|
+| `tekton/cronjobs/releases_azure/releases/pipeline-nightly/` | `.github/workflows/nightly-pipeline.yml` |
+| `tekton/cronjobs/releases_azure/releases/triggers-nightly/` | `.github/workflows/nightly-triggers.yml` |
+| `tekton/cronjobs/releases_azure/releases/dashboard-nightly/` | `.github/workflows/nightly-dashboard.yml` |
+| `tekton/cronjobs/releases_azure/releases/chains-nightly/` | `.github/workflows/nightly-chains.yml` |
+| `tekton/cronjobs/releases_azure/releases/operator-nightly/` | `.github/workflows/nightly-operator.yml` |
+| `tekton/cronjobs/releases_azure/releases/add-pr-body-*` | `.github/workflows/nightly-plumbing-components.yml` |
+| `tekton/cronjobs/releases_azure/releases/pr-*` | `.github/workflows/nightly-plumbing-components.yml` |
 
-### Debug Mode
-Enable debug output by setting repository secret:
-```
-ACTIONS_STEP_DEBUG=true
-```
+## Artifact Locations
 
-## Future Improvements
+### Container Images
+- **Tekton Projects**: `ghcr.io/tektoncd/{project}:{version}`
+- **Plumbing Components**: `ghcr.io/tektoncd/plumbing/{component-type}/{component}:{version}`
 
-### Short Term
-- **Resource Optimization** - Tune cluster sizing for faster startup
-- **Parallel Builds** - Run compatible projects simultaneously  
-- **Better Reporting** - Enhanced summaries and notifications
-
-### Long Term (Option 2)
-- **Native GHA Conversion** - Replace Tekton with GitHub Actions
-- **Distributed Workflows** - Per-repository release definitions
-- **Advanced Attestations** - SBOM and vulnerability scanning
-
-## Cost Analysis
-
-### Current (Azure Hosted)
-- **Persistent cluster costs** - $X/month (estimated)
-- **Maintenance overhead** - Manual cluster management
-
-### New (GitHub Actions)
-- **Execution cost** - ~$0.008/minute for public repos (free)
-- **Storage cost** - Artifact storage included in plan
-- **Maintenance** - Fully automated, no infrastructure
-
-## Support
-
-For issues with the nightly release system:
-1. Check [GitHub Actions status](https://www.githubstatus.com/)
-2. Review workflow logs for specific errors
-3. Open issues in the [plumbing repository](https://github.com/tektoncd/plumbing/issues)
-4. Contact the Tekton release team in Slack (#release) 
+### Release Assets
+- **GitHub Releases**: Attached to workflow runs with comprehensive logs
+- **Artifact Storage**: Available via GitHub Actions artifacts API
+- **Attestations**: Signed and verifiable via GitHub attestations API 
