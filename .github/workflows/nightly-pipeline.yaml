@@ -28,8 +28,9 @@ jobs:
     with:
       project-name: 'pipeline'
       git-repository: 'github.com/tektoncd/pipeline'
-      registry-namespace: 'tektoncd/pipeline'
-      #run-tests: ${{ inputs.run-tests || false }}
+      #registry-namespace: 'tektoncd/pipeline' # Uncomment if using Tekton's official registry namespace
+      #run-tests: ${{ inputs.run-tests || false }} # Uncomment if you want to run tests
+      registry-namespace: 'anithapriyanatarajan/pipeline' # Temporary for testing-
       run-tests: true
       kubernetes-version: 'v1.31.0'
       enable-chains: true
