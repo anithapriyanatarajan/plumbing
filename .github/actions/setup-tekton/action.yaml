@@ -35,12 +35,17 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+        REGISTRY_URL: ${{ inputs.registry-url }}
+        ENABLE_CHAINS: ${{ inputs.enable-chains }}
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
       run: |
         echo "🔍 Validating setup parameters..."
-        echo "Kubernetes version: ${{ inputs.kubernetes-version }}"
-        echo "Registry URL: ${{ inputs.registry-url }}"
-        echo "Chains enabled: ${{ inputs.enable-chains }}"
-        echo "Cluster name: ${{ inputs.cluster-name }}"
+        echo "Kubernetes version: \"$KUBERNETES_VERSION\""
+        echo "Registry URL: \"$REGISTRY_URL\""
+        echo "Chains enabled: \"$ENABLE_CHAINS\""
+        echo "Cluster name: \"$CLUSTER_NAME\""
 
     - name: Install Kind
       shell: bash
@@ -53,15 +58,18 @@ runs:
 
     - name: Create Kind cluster
       shell: bash
+      env:
+        KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
       run: |
-        echo "🏗️ Creating Kind cluster '${{ inputs.cluster-name }}'..."
+        echo "🏗️ Creating Kind cluster '$CLUSTER_NAME'..."
         cat <<EOF > kind-config.yaml
         apiVersion: kind.x-k8s.io/v1alpha4
         kind: Cluster
-        name: ${{ inputs.cluster-name }}
+        name: $CLUSTER_NAME
         nodes:
         - role: control-plane
-          image: kindest/node:${{ inputs.kubernetes-version }}
+          image: kindest/node:$KUBERNETES_VERSION
           kubeadmConfigPatches:
           - |
             kind: InitConfiguration
@@ -69,9 +77,9 @@ runs:
               kubeletExtraArgs:
                 node-labels: "ingress-ready=true"
         - role: worker
-          image: kindest/node:${{ inputs.kubernetes-version }}
+          image: kindest/node:$KUBERNETES_VERSION
         - role: worker
-          image: kindest/node:${{ inputs.kubernetes-version }}
+          image: kindest/node:$KUBERNETES_VERSION
         kubeadmConfigPatches:
         - |
           apiVersion: kubeadm.k8s.io/v1beta3
@@ -84,7 +92,7 @@ runs:
               service-account-signing-key-file: /etc/kubernetes/pki/sa.key
         EOF
         timeout 600 kind create cluster --config kind-config.yaml --wait 300s
-        kubectl cluster-info --context kind-${{ inputs.cluster-name }}
+        kubectl cluster-info --context kind-$CLUSTER_NAME
         kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
     - name: Install Tekton Pipeline
@@ -127,6 +135,8 @@ runs:
     - name: Install Tekton Chains
       if: inputs.enable-chains == 'true'
       shell: bash
+      env:
+        ENABLE_CHAINS: ${{ inputs.enable-chains }}
       run: |
         echo "🔗 Installing Tekton Chains..."
         for attempt in 1 2 3; do
@@ -213,6 +223,10 @@ runs:
 
     - name: Verify installation
       shell: bash
+      env:
+        KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+        REGISTRY_URL: ${{ inputs.registry-url }}
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
       run: |
         echo "🔍 Verifying Tekton installation..."
         kubectl get pods -A | grep tekton
@@ -229,9 +243,9 @@ runs:
             image: alpine:latest
             script: |
               echo "✅ Tekton cluster verification successful!"
-              echo "Cluster: ${{ inputs.cluster-name }}"
-              echo "Kubernetes: ${{ inputs.kubernetes-version }}"
-              echo "Registry: ${{ inputs.registry-url }}"
+              echo "Cluster: $CLUSTER_NAME"
+              echo "Kubernetes: $KUBERNETES_VERSION"
+              echo "Registry: $REGISTRY_URL"
         ---
         apiVersion: tekton.dev/v1
         kind: TaskRun
@@ -249,16 +263,18 @@ runs:
     - name: Export cluster information
       id: cluster-info
       shell: bash
+      env:
+        REGISTRY_URL: ${{ inputs.registry-url }}
       run: |
         echo "📋 Exporting cluster information..."
         KUBECONFIG_PATH="$HOME/.kube/config"
         CLUSTER_ENDPOINT=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 
         echo "kubeconfig-path=$KUBECONFIG_PATH" >> "$GITHUB_OUTPUT"
-        echo "registry-url=${{ inputs.registry-url }}" >> "$GITHUB_OUTPUT"
+        echo "registry-url=$REGISTRY_URL" >> "$GITHUB_OUTPUT"
         echo "cluster-endpoint=$CLUSTER_ENDPOINT" >> "$GITHUB_OUTPUT"
 
         echo "✅ Cluster setup completed successfully!"
         echo "📍 Kubeconfig: $KUBECONFIG_PATH"
         echo "🌐 Cluster endpoint: $CLUSTER_ENDPOINT"
-        echo "📦 Registry: ${{ inputs.registry-url }}"
+        echo "📦 Registry: $REGISTRY_URL"

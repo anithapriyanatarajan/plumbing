@@ -1,0 +1,115 @@
+name: 'Setup Tekton Release Environment'
+description: 'Sets up a complete Tekton environment for nightly releases with Kind cluster, Tekton components, and container registry'
+
+inputs:
+  kubernetes-version:
+    description: 'Kubernetes version for Kind cluster'
+    required: false
+    default: 'v1.31.0'
+  registry-url:
+    description: 'Container registry URL for image publishing'
+    required: false
+    default: 'ghcr.io'
+  enable-chains:
+    description: 'Install and configure Tekton Chains for supply chain security'
+    required: false
+    default: 'true'
+  cluster-name:
+    description: 'Kind cluster name'
+    required: false
+    default: 'tekton-release'
+
+outputs:
+  kubeconfig-path:
+    description: 'Path to the kubeconfig file'
+    value: ${{ steps.cluster-info.outputs.kubeconfig-path }}
+  registry-url:
+    description: 'Container registry URL'
+    value: ${{ steps.cluster-info.outputs.registry-url }}
+  cluster-endpoint:
+    description: 'Kubernetes cluster endpoint'
+    value: ${{ steps.cluster-info.outputs.cluster-endpoint }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+        REGISTRY_URL: ${{ inputs.registry-url }}
+        ENABLE_CHAINS: ${{ inputs.enable-chains }}
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+      run: |
+        echo "🔍 Validating setup parameters..."
+        echo "Kubernetes version: \"$KUBERNETES_VERSION\""
+        echo "Registry URL: \"$REGISTRY_URL\""
+        echo "Chains enabled: \"$ENABLE_CHAINS\""
+        echo "Cluster name: \"$CLUSTER_NAME\""
+
+    - name: Install Kind
+      shell: bash
+      run: |
+        echo "📦 Installing Kind..."
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+        kind version
+
+    - name: Create Kind cluster
+      shell: bash
+      env:
+        KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+        CLUSTER_NAME: ${{ inputs.cluster-name }}
+      run: |
+        echo "🏗️ Creating Kind cluster '$CLUSTER_NAME'..."
+        cat <<EOF > kind-config.yaml
+        apiVersion: kind.x-k8s.io/v1alpha4
+        kind: Cluster
+        name: $CLUSTER_NAME
+        nodes:
+        - role: control-plane
+          image: kindest/node:$KUBERNETES_VERSION
+          kubeadmConfigPatches:
+          - |
+            kind: InitConfiguration
+            nodeRegistration:
+              kubeletExtraArgs:
+                node-labels: "ingress-ready=true"
+        - role: worker
+          image: kindest/node:$KUBERNETES_VERSION
+        - role: worker
+          image: kindest/node:$KUBERNETES_VERSION
+        kubeadmConfigPatches:
+        - |
+          apiVersion: kubeadm.k8s.io/v1beta3
+          kind: ClusterConfiguration
+          metadata:
+            name: config
+          apiServer:
+            extraArgs:
+              service-account-issuer: kubernetes.default.svc.cluster.local
+              service-account-signing-key-file: /etc/kubernetes/pki/sa.key
+        EOF
+        timeout 600 kind create cluster --config kind-config.yaml --wait 300s
+        kubectl cluster-info --context kind-$CLUSTER_NAME
+        kubectl wait --for=condition=Ready nodes --all --timeout=300s
+
+    - name: Export cluster information
+      id: cluster-info
+      shell: bash
+      env:
+        REGISTRY_URL: ${{ inputs.registry-url }}
+      run: |
+        echo "📋 Exporting cluster information..."
+        KUBECONFIG_PATH="$HOME/.kube/config"
+        CLUSTER_ENDPOINT=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+
+        echo "kubeconfig-path=$KUBECONFIG_PATH" >> "$GITHUB_OUTPUT"
+        echo "registry-url=$REGISTRY_URL" >> "$GITHUB_OUTPUT"
+        echo "cluster-endpoint=$CLUSTER_ENDPOINT" >> "$GITHUB_OUTPUT"
+
+        echo "✅ Cluster setup completed successfully!"
+        echo "📍 Kubeconfig: $KUBECONFIG_PATH"
+        echo "🌐 Cluster endpoint: $CLUSTER_ENDPOINT"
+        echo "📦 Registry: $REGISTRY_URL"

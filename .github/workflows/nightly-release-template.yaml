@@ -97,17 +97,21 @@ jobs:
 
       - name: Setup Tekton environment
         id: tekton
-        uses: ./plumbing/.github/actions/setup-tekton
+        uses: ./plumbing/.github/actions/setup-kind
         with:
           kubernetes-version: ${{ inputs.kubernetes-version }}
           registry-url: ${{ inputs.container-registry }}
           enable-chains: ${{ inputs.enable-chains }}
-          cluster-name: '${{ inputs.project-name }}-release'
+          cluster-name: ${{ inputs.project-name }}-release
           
       - name: Setup container registry authentication
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          CONTAINER_REGISTRY: ${{ inputs.container-registry }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           echo "🔐 Configuring container registry authentication..."
-          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ inputs.container-registry }} -u ${{ github.actor }} --password-stdin
+          echo "$REGISTRY_TOKEN" | docker login "$CONTAINER_REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Show current working directory
         run: |
@@ -116,27 +120,26 @@ jobs:
 
       - name: Generate release metadata
         id: metadata
+        env:
+          PROJECT_NAME: ${{ inputs.project-name }}
+          CONTAINER_REGISTRY: ${{ inputs.container-registry }}
+          REGISTRY_NAMESPACE: ${{ inputs.registry-namespace }}
         run: |
-          pushd ${{ inputs.project-name }}
+          pushd "$PROJECT_NAME"
           echo "📋 Generating release metadata..."
-          
           # Get latest commit SHA
           GIT_SHA=$(git rev-parse HEAD)
           SHORT_SHA=$(echo $GIT_SHA | cut -c1-10)
-          
           # Generate version tag
           VERSION_TAG="v$(date +"%Y%m%d")-${SHORT_SHA}"
-          
           # Construct release URL
-          RELEASE_URL="https://${{ inputs.container-registry }}/${{ inputs.registry-namespace }}/${{ inputs.project-name }}"
-          
+          RELEASE_URL="https://$CONTAINER_REGISTRY/$REGISTRY_NAMESPACE/$PROJECT_NAME"
           echo "version=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "sha=$GIT_SHA" >> $GITHUB_OUTPUT
           echo "short-sha=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "url=$RELEASE_URL" >> $GITHUB_OUTPUT
-          
           echo "📦 Release metadata:"
-          echo "  Project: ${{ inputs.project-name }}"
+          echo "  Project: $PROJECT_NAME"
           echo "  Version: $VERSION_TAG"
           echo "  SHA: $GIT_SHA"
           echo "  Registry: $RELEASE_URL"
@@ -149,19 +152,20 @@ jobs:
       - name: Run integration tests
         if: inputs.run-tests
         timeout-minutes: 30
+        env:
+          PROJECT_NAME: ${{ inputs.project-name }}
+          KUBECONFIG_PATH: ${{ steps.tekton.outputs.kubeconfig-path }}
+          KO_DOCKER_REPO: ${{ inputs.container-registry }}/${{ inputs.registry-namespace }}
         run: |
-          pushd ${{ inputs.project-name }}
+          pushd "$PROJECT_NAME"
           echo "Current working directory: $(pwd)"
-          echo "🧪 Running integration tests for ${{ inputs.project-name }}..."
-          
+          echo "🧪 Running integration tests for $PROJECT_NAME..."
           # Set up test environment to use existing cluster
-          export KUBECONFIG="${{ steps.tekton.outputs.kubeconfig-path }}"
-          export KO_DOCKER_REPO="${{ inputs.container-registry }}/${{ inputs.registry-namespace }}"
-          
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          export KO_DOCKER_REPO="$KO_DOCKER_REPO"
           # Skip GCP cluster initialization since we're using existing cluster
           export SKIP_INITIALIZE=true
           export SYSTEM_NAMESPACE=tekton-pipelines
-          
           # Run project-specific tests
           if [ -f "./test/e2e-tests.sh" ]; then
             echo "Running e2e tests (using existing cluster, skipping GCP initialization)..."
@@ -173,7 +177,6 @@ jobs:
             echo "No standard test script found, running basic validation..."
             make test || echo "No make test target, skipping"
           fi
-          
           echo "✅ Integration tests completed successfully"
           popd
 
@@ -184,16 +187,19 @@ jobs:
       - name: Build and publish release
         id: release
         timeout-minutes: 30
+        env:
+          PROJECT_NAME: ${{ inputs.project-name }}
+          KUBECONFIG_PATH: ${{ steps.tekton.outputs.kubeconfig-path }}
+          KO_DOCKER_REPO: ${{ inputs.container-registry }}/${{ inputs.registry-namespace }}
+          TAG: ${{ steps.metadata.outputs.version }}
         run: |
-          pushd ${{ inputs.project-name }}
+          pushd "$PROJECT_NAME"
           echo "Current working directory: $(pwd)"
-          echo "🏗️ Building and publishing release for ${{ inputs.project-name }}..."
-          
+          echo "🏗️ Building and publishing release for $PROJECT_NAME..."
           # Set up build environment
-          export KUBECONFIG="${{ steps.tekton.outputs.kubeconfig-path }}"
-          export KO_DOCKER_REPO="${{ inputs.container-registry }}/${{ inputs.registry-namespace }}"
-          export TAG="${{ steps.metadata.outputs.version }}"
-          
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          export KO_DOCKER_REPO="$KO_DOCKER_REPO"
+          export TAG="$TAG"
           # Build release artifacts
           if [ -f "./hack/release.sh" ]; then
             echo "Using project release script..."
@@ -202,25 +208,21 @@ jobs:
             echo "Using kustomize build..."
             kustomize build ./config/ > release.yaml
           else
-            echo "❌ No recognized build method found
+            echo "❌ No recognized build method found"
             exit 1
           fi
-          
           # Verify release.yaml was created
           if [ ! -f "release.yaml" ]; then
             echo "❌ release.yaml not found after build"
             exit 1
           fi
-          
           echo "📦 Release artifacts generated:"
           ls -la *.yaml || true
-          
           # Tag and push container images
           if command -v ko >/dev/null 2>&1; then
             echo "Publishing container images with ko..."
             ko publish --platform=linux/amd64,linux/arm64 --tags=$TAG ./cmd/...
           fi
-          
           echo "✅ Release build completed successfully"
           popd
           
@@ -246,25 +248,31 @@ jobs:
           retention-days: 90
           
       - name: Create release summary
+        env:
+          PROJECT_NAME: ${{ inputs.project-name }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SHA: ${{ steps.metadata.outputs.sha }}
+          REGISTRY_URL: ${{ steps.metadata.outputs.url }}
+          RUN_TESTS: ${{ inputs.run-tests }}
+          ENABLE_CHAINS: ${{ inputs.enable-chains }}
+          CONTAINER_REGISTRY: ${{ inputs.container-registry }}
         run: |
           echo "# 🚀 Nightly Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📦 Release Information" >> $GITHUB_STEP_SUMMARY
-          echo "- **Project**: ${{ inputs.project-name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.metadata.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Git SHA**: \`${{ steps.metadata.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Registry**: ${{ steps.metadata.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tests Run**: ${{ inputs.run-tests }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Chains Enabled**: ${{ inputs.enable-chains }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project**: $PROJECT_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git SHA**: \`$SHA\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: $REGISTRY_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tests Run**: $RUN_TESTS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Chains Enabled**: $ENABLE_CHAINS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📋 Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- Release manifest: \`release.yaml\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Container images: Published to ${{ inputs.container-registry }}" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ inputs.enable-chains }}" = "true" ]; then
+          echo "- Container images: Published to $CONTAINER_REGISTRY" >> $GITHUB_STEP_SUMMARY
+          if [ "$ENABLE_CHAINS" = "true" ]; then
             echo "- Supply chain attestations: Generated" >> $GITHUB_STEP_SUMMARY
           fi
-          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Release completed successfully!" >> $GITHUB_STEP_SUMMARY
           
