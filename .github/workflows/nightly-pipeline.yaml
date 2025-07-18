@@ -24,7 +24,7 @@ permissions:
 jobs:
   nightly-release:
     name: 'Tekton Pipeline Nightly Release'
-    uses: ./.github/workflows/nightly-release-template.yml
+    uses: ./.github/workflows/nightly-release-template.yaml
     with:
       project-name: 'pipeline'
       git-repository: 'github.com/tektoncd/pipeline'
