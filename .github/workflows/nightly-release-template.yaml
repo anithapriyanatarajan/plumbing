@@ -112,11 +112,12 @@ jobs:
       - name: Show current working directory
         run: |
           echo "Current working directory: $(pwd)"
+          ls -al
 
       - name: Generate release metadata
         id: metadata
         run: |
-          pushd ../${{ inputs.project-name }}
+          pushd ${{ inputs.project-name }}
           echo "📋 Generating release metadata..."
           
           # Get latest commit SHA
@@ -149,7 +150,7 @@ jobs:
         if: inputs.run-tests
         timeout-minutes: 30
         run: |
-          pushd ../${{ inputs.project-name }}
+          pushd ${{ inputs.project-name }}
           echo "Current working directory: $(pwd)"
           echo "🧪 Running integration tests for ${{ inputs.project-name }}..."
           
@@ -180,7 +181,7 @@ jobs:
         id: release
         timeout-minutes: 30
         run: |
-          pushd ../${{ inputs.project-name }}
+          pushd ${{ inputs.project-name }}
           echo "Current working directory: $(pwd)"
           echo "🏗️ Building and publishing release for ${{ inputs.project-name }}..."
           
@@ -222,7 +223,8 @@ jobs:
       - name: Show current working directory
         run: |
           echo "Current working directory: $(pwd)"
-          ls -al
+          ls -al ./${{ inputs.project-name }}
+          ls -al ./plumbing
 
       - name: Generate GitHub attestations
         if: inputs.enable-chains
