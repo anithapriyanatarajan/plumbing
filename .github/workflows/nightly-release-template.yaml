@@ -154,13 +154,17 @@ jobs:
           echo "Current working directory: $(pwd)"
           echo "🧪 Running integration tests for ${{ inputs.project-name }}..."
           
-          # Set up test environment
+          # Set up test environment to use existing cluster
           export KUBECONFIG="${{ steps.tekton.outputs.kubeconfig-path }}"
           export KO_DOCKER_REPO="${{ inputs.container-registry }}/${{ inputs.registry-namespace }}"
           
+          # Skip GCP cluster initialization since we're using existing cluster
+          export SKIP_INITIALIZE=true
+          export SYSTEM_NAMESPACE=tekton-pipelines
+          
           # Run project-specific tests
           if [ -f "./test/e2e-tests.sh" ]; then
-            echo "Running e2e tests..."
+            echo "Running e2e tests (using existing cluster, skipping GCP initialization)..."
             ./test/e2e-tests.sh
           elif [ -f "./test/presubmit-tests.sh" ]; then
             echo "Running presubmit tests..."
