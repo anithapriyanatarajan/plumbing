@@ -83,7 +83,7 @@ jobs:
           path: ${{ inputs.project-name }}
 
       - name: Show current working directory
-        run: pwd && ls -al 
+        run: echo "Current working directory: $(pwd)"
           
       - name: Checkout plumbing for actions
         uses: actions/checkout@v4
@@ -91,7 +91,7 @@ jobs:
           path: plumbing
 
       - name: Show current working directory
-        run: pwd && ls -al 
+        run: echo "Current working directory: $(pwd)"
 
       - name: Setup Tekton environment
         id: tekton
@@ -104,18 +104,16 @@ jobs:
           
       - name: Setup container registry authentication
         run: |
-          pushd ${{ inputs.project-name }}
           echo "🔐 Configuring container registry authentication..."
           echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ inputs.container-registry }} -u ${{ github.actor }} --password-stdin
-          popd
 
       - name: Show current working directory
-        run: pwd && ls -al 
+        run: echo "Current working directory: $(pwd)"
 
       - name: Generate release metadata
         id: metadata
         run: |
-          pushd ${{ inputs.project-name }}
+          pushd ../${{ inputs.project-name }}
           echo "📋 Generating release metadata..."
           
           # Get latest commit SHA
@@ -141,13 +139,13 @@ jobs:
           popd
 
       - name: Show current working directory
-        run: pwd && ls -al 
+        run: echo "Current working directory: $(pwd)"
 
       - name: Run integration tests
         if: inputs.run-tests
         timeout-minutes: 30
         run: |
-          pushd ..
+          pushd ../${{ inputs.project-name }}
           echo "Current working directory: $(pwd)"
           echo "🧪 Running integration tests for ${{ inputs.project-name }}..."
           
@@ -171,13 +169,13 @@ jobs:
           popd
 
       - name: Show current working directory
-        run: pwd && ls -al 
+        run: echo "Current working directory: $(pwd)"
 
       - name: Build and publish release
         id: release
         timeout-minutes: 30
         run: |
-          pushd ..
+          pushd ../${{ inputs.project-name }}
           echo "Current working directory: $(pwd)"
           echo "🏗️ Building and publishing release for ${{ inputs.project-name }}..."
           
@@ -217,7 +215,9 @@ jobs:
           popd
           
       - name: Show current working directory
-        run: pwd && ls -al 
+        run: |
+          echo "Current working directory: $(pwd)"
+          ls -al
 
       - name: Generate GitHub attestations
         if: inputs.enable-chains
