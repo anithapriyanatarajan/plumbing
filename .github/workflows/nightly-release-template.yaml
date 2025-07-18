@@ -147,7 +147,8 @@ jobs:
         if: inputs.run-tests
         timeout-minutes: 30
         run: |
-          pushd ${{ inputs.project-name }}
+          pushd ..
+          echo "Current working directory: $(pwd)"
           echo "🧪 Running integration tests for ${{ inputs.project-name }}..."
           
           # Set up test environment
@@ -176,7 +177,8 @@ jobs:
         id: release
         timeout-minutes: 30
         run: |
-          pushd ${{ inputs.project-name }}
+          pushd ..
+          echo "Current working directory: $(pwd)"
           echo "🏗️ Building and publishing release for ${{ inputs.project-name }}..."
           
           # Set up build environment
