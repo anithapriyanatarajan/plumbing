@@ -163,6 +163,10 @@ jobs:
           sudo mv kustomize /usr/local/bin/
           kustomize version
 
+          echo "📦 Installing go-junit-report..."
+          go install github.com/jstemmer/go-junit-report@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
       - name: Run integration tests
         if: inputs.run-tests
         timeout-minutes: 30
