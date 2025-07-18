@@ -163,13 +163,11 @@ runs:
           --from-literal=transparency.url=https://rekor.sigstore.dev
 
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
-        kubectl describe pod -n tekton-chains -l app=tekton-chains-controller || true
 
         echo "🔍 Verifying Tekton Chains readiness..."
         if ! kubectl wait --for=condition=Ready pod -l app=tekton-chains-controller -n tekton-chains --timeout=60s; then
           echo "❌ Tekton Chains failed to become ready."
           echo "📄 Chains controller logs:"
-          kubectl describe pod -n tekton-chains -l app=tekton-chains-controller || true
           kubectl logs -l app=tekton-chains-controller -n tekton-chains --all-containers=true || true
           exit 1
         fi

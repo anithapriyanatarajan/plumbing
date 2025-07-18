@@ -80,6 +80,7 @@ jobs:
           repository: tektoncd/${{ inputs.project-name }}
           token: ${{ secrets.GH_TOKEN }}
           fetch-depth: 0  # Full history for proper versioning
+          path: ${{ inputs.project-name }}
 
       - name: Show current working directory
         run: pwd && ls -al 
@@ -103,12 +104,18 @@ jobs:
           
       - name: Setup container registry authentication
         run: |
+          pushd ${{ inputs.project-name }}
           echo "🔐 Configuring container registry authentication..."
           echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ inputs.container-registry }} -u ${{ github.actor }} --password-stdin
-          
+          popd
+
+      - name: Show current working directory
+        run: pwd && ls -al 
+
       - name: Generate release metadata
         id: metadata
         run: |
+          pushd ${{ inputs.project-name }}
           echo "📋 Generating release metadata..."
           
           # Get latest commit SHA
@@ -131,11 +138,16 @@ jobs:
           echo "  Version: $VERSION_TAG"
           echo "  SHA: $GIT_SHA"
           echo "  Registry: $RELEASE_URL"
-          
+          popd
+
+      - name: Show current working directory
+        run: pwd && ls -al 
+
       - name: Run integration tests
         if: inputs.run-tests
         timeout-minutes: 30
         run: |
+          pushd ${{ inputs.project-name }}
           echo "🧪 Running integration tests for ${{ inputs.project-name }}..."
           
           # Set up test environment
@@ -143,23 +155,28 @@ jobs:
           export KO_DOCKER_REPO="${{ inputs.container-registry }}/${{ inputs.registry-namespace }}"
           
           # Run project-specific tests
-          if [ -f "./${{ inputs.project-name }}/test/e2e-tests.sh" ]; then
+          if [ -f "./test/e2e-tests.sh" ]; then
             echo "Running e2e tests..."
-            ./${{ inputs.project-name }}/test/e2e-tests.sh
-          elif [ -f "./${{ inputs.project-name }}/test/presubmit-tests.sh" ]; then
+            ./test/e2e-tests.sh
+          elif [ -f "./test/presubmit-tests.sh" ]; then
             echo "Running presubmit tests..."
-            ./${{ inputs.project-name }}/test/presubmit-tests.sh
+            ./test/presubmit-tests.sh
           else
             echo "No standard test script found, running basic validation..."
             make test || echo "No make test target, skipping"
           fi
           
           echo "✅ Integration tests completed successfully"
-          
+          popd
+
+      - name: Show current working directory
+        run: pwd && ls -al 
+
       - name: Build and publish release
         id: release
         timeout-minutes: 30
         run: |
+          pushd ${{ inputs.project-name }}
           echo "🏗️ Building and publishing release for ${{ inputs.project-name }}..."
           
           # Set up build environment
@@ -168,14 +185,14 @@ jobs:
           export TAG="${{ steps.metadata.outputs.version }}"
           
           # Build release artifacts
-          if [ -f "./${{ inputs.project-name }}/hack/release.sh" ]; then
+          if [ -f "./hack/release.sh" ]; then
             echo "Using project release script..."
-            ./${{ inputs.project-name }}/hack/release.sh --tag=$TAG --output=release.yaml
-          elif [ -f "./${{ inputs.project-name }}/config" ] && [ -d "./${{ inputs.project-name }}/config" ]; then
+            ./hack/release.sh --tag=$TAG --output=release.yaml
+          elif [ -f "./config" ] && [ -d "./config" ]; then
             echo "Using kustomize build..."
-            kustomize build ${{ inputs.project-name }}/config/ > release.yaml
+            kustomize build ./config/ > release.yaml
           else
-            echo "❌ No recognized build method found"
+            echo "❌ No recognized build method found
             exit 1
           fi
           
@@ -191,16 +208,20 @@ jobs:
           # Tag and push container images
           if command -v ko >/dev/null 2>&1; then
             echo "Publishing container images with ko..."
-            ko publish --platform=linux/amd64,linux/arm64 --tags=$TAG ./${{ inputs.project-name }}/cmd/...
+            ko publish --platform=linux/amd64,linux/arm64 --tags=$TAG ./cmd/...
           fi
           
           echo "✅ Release build completed successfully"
+          popd
           
+      - name: Show current working directory
+        run: pwd && ls -al 
+
       - name: Generate GitHub attestations
         if: inputs.enable-chains
         uses: actions/attest-build-provenance@v1
         with:
-          subject-path: 'release.yaml'
+          subject-path: '${{ inputs.project-name }}/release.yaml'
           
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
