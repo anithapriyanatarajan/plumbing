@@ -149,16 +149,19 @@ jobs:
         run: |  
           echo "Current working directory: $(pwd)"
 
-      - name: Install pre-requisites
+      - name: Install required tools
         run: |
-          echo "🔧 Installing kustomize..."
-          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_$(uname -s)_$(uname -m).tar.gz | tar xz -C /usr/local/bin kustomize
-          kustomize version
-          echo "kustomize installed successfully"
           echo "🔧 Installing ko CLI..."
-          curl -sL https://github.com/ko-build/ko/releases/latest/download/ko_$(uname -s)_$(uname -m).tar.gz | tar xz -C /usr/local/bin ko
+          curl -sL https://github.com/ko-build/ko/releases/latest/download/ko_$(uname -s)_$(uname -m).tar.gz | sudo tar -xz -C /usr/local/bin
           ko version
-          echo "ko CLI installed successfully"
+
+          echo "🔧 Installing kustomize..."
+          KUSTOMIZE_VERSION=v5.4.1  # Change to desired version
+          curl -sLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_amd64.tar.gz
+          tar -xzf kustomize.tar.gz
+          chmod +x kustomize
+          sudo mv kustomize /usr/local/bin/
+          kustomize version
 
       - name: Run integration tests
         if: inputs.run-tests

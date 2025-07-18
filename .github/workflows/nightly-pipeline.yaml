@@ -10,7 +10,7 @@ on:
         required: false
         type: boolean
         default: false 
-  push: # Temporary for testing-4
+  push: # Temporary for testing-5
     branches: [migrate-pipeline-nightly-to-gha]
     paths:
       - '.github/workflows/nightly-pipeline.yaml'
