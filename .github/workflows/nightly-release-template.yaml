@@ -149,6 +149,17 @@ jobs:
         run: |  
           echo "Current working directory: $(pwd)"
 
+      - name: Install pre-requisites
+        run: |
+          echo "🔧 Installing kustomize..."
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize_$(uname -s)_$(uname -m).tar.gz | tar xz -C /usr/local/bin kustomize
+          kustomize version
+          echo "kustomize installed successfully"
+          echo "🔧 Installing ko CLI..."
+          curl -sL https://github.com/ko-build/ko/releases/latest/download/ko_$(uname -s)_$(uname -m).tar.gz | tar xz -C /usr/local/bin ko
+          ko version
+          echo "ko CLI installed successfully"
+
       - name: Run integration tests
         if: inputs.run-tests
         timeout-minutes: 30
