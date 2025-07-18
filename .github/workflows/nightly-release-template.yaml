@@ -162,6 +162,11 @@ jobs:
           chmod +x kustomize
           sudo mv kustomize /usr/local/bin/
           kustomize version
+ 
+          echo "📦 Installing rekor-cli..."
+          go install -v github.com/sigstore/rekor/cmd/rekor-cli@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          rekor-cli version || echo "rekor-cli installed"
 
           echo "📦 Installing go-junit-report..."
           go install github.com/jstemmer/go-junit-report@latest
@@ -173,17 +178,19 @@ jobs:
         env:
           PROJECT_NAME: ${{ inputs.project-name }}
           KUBECONFIG_PATH: ${{ steps.tekton.outputs.kubeconfig-path }}
-          KO_DOCKER_REPO: ${{ inputs.container-registry }}/${{ inputs.registry-namespace }}
+          KO_DOCKER_REPO: registry.local:5000
         run: |
           pushd "$PROJECT_NAME"
           echo "Current working directory: $(pwd)"
           echo "🧪 Running integration tests for $PROJECT_NAME..."
-          # Set up test environment to use existing cluster
-          export KUBECONFIG="$KUBECONFIG_PATH"
-          export KO_DOCKER_REPO="$KO_DOCKER_REPO"
           # Skip GCP cluster initialization since we're using existing cluster
           export SKIP_INITIALIZE=true
+          export KUBECONFIG="$KUBECONFIG_PATH"
           export SYSTEM_NAMESPACE=tekton-pipelines
+          export PIPELINE_FEATURE_GATE=stable
+          export RUN_YAML_TESTS=false
+          export KO_DOCKER_REPO=registry.local:5000
+          export ARTIFACTS=/workspace/source/artifacts
           # Run project-specific tests
           if [ -f "./test/e2e-tests.sh" ]; then
             echo "Running e2e tests (using existing cluster, skipping GCP initialization)..."
