@@ -83,7 +83,8 @@ jobs:
           path: ${{ inputs.project-name }}
 
       - name: Show current working directory
-        run: echo "Current working directory: $(pwd)"
+        run: |
+          echo "Current working directory: $(pwd)"
           
       - name: Checkout plumbing for actions
         uses: actions/checkout@v4
@@ -91,7 +92,8 @@ jobs:
           path: plumbing
 
       - name: Show current working directory
-        run: echo "Current working directory: $(pwd)"
+        run: |
+          echo "Current working directory: $(pwd)"
 
       - name: Setup Tekton environment
         id: tekton
@@ -108,7 +110,8 @@ jobs:
           echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ inputs.container-registry }} -u ${{ github.actor }} --password-stdin
 
       - name: Show current working directory
-        run: echo "Current working directory: $(pwd)"
+        run: |
+          echo "Current working directory: $(pwd)"
 
       - name: Generate release metadata
         id: metadata
@@ -139,7 +142,8 @@ jobs:
           popd
 
       - name: Show current working directory
-        run: echo "Current working directory: $(pwd)"
+        run: |  
+          echo "Current working directory: $(pwd)"
 
       - name: Run integration tests
         if: inputs.run-tests
@@ -169,7 +173,8 @@ jobs:
           popd
 
       - name: Show current working directory
-        run: echo "Current working directory: $(pwd)"
+        run: |
+          echo "Current working directory: $(pwd)"
 
       - name: Build and publish release
         id: release
