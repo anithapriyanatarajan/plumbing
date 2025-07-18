@@ -178,7 +178,7 @@ jobs:
         env:
           PROJECT_NAME: ${{ inputs.project-name }}
           KUBECONFIG_PATH: ${{ steps.tekton.outputs.kubeconfig-path }}
-          KO_DOCKER_REPO: registry.local:5000
+          KO_DOCKER_REPO: kind.local
         run: |
           pushd "$PROJECT_NAME"
           echo "Current working directory: $(pwd)"
@@ -189,7 +189,7 @@ jobs:
           export SYSTEM_NAMESPACE=tekton-pipelines
           export PIPELINE_FEATURE_GATE=stable
           export RUN_YAML_TESTS=false
-          export KO_DOCKER_REPO=registry.local:5000
+          export KO_DOCKER_REPO=kind.local
           export ARTIFACTS=/workspace/source/artifacts
           # Run project-specific tests
           if [ -f "./test/e2e-tests.sh" ]; then
