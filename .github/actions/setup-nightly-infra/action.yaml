@@ -2,10 +2,6 @@
 name: Tekton Nightly Build Infra
 description: |
   Sets up Tekton nightly build infrastructure.
-  
-  Required secrets:
-    - GCS_SERVICE_ACCOUNT_KEY: GCP service account key for release bucket access
-    - GHCR_TOKEN: GitHub Container Registry token for image publishing
 inputs:
   kubernetes_version:
     description: 'Kubernetes version to test with'
@@ -15,6 +11,12 @@ inputs:
     description: 'Image registry user'
     required: false
     default: 'tekton-robot'
+  ghcr-token:
+    description: 'GHCR token'
+    required: true
+  gcs-service-account-key:
+    description: 'GCS service account key'
+    required: true
 runs:
   using: "composite"
   steps:
@@ -37,7 +39,7 @@ runs:
         
     - name: Configure Tekton Git Resolver
       env:
-        GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
+        GITHUB_TOKEN: ${{ inputs.ghcr-token }}
       run: |
         set -euo pipefail
         kubectl create secret generic git-resolver-secret \
@@ -65,8 +67,8 @@ runs:
 
     - name: Create secrets, service account and PVC template
       env:
-        GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
-        GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
+        GCS_SERVICE_ACCOUNT_KEY: ${{ inputs.gcs-service-account-key }}
+        GHCR_TOKEN: ${{ inputs.ghcr-token }}
         IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
       run: |
         set -euo pipefail
