@@ -11,10 +11,10 @@ inputs:
     description: 'Image registry user'
     required: false
     default: 'tekton-robot'
-  ghcr-token:
+  ghcr_token:
     description: 'GHCR token'
     required: true
-  gcs-service-account-key:
+  gcs_service_account_key:
     description: 'GCS service account key'
     required: true
 runs:
@@ -67,8 +67,8 @@ runs:
 
     - name: Create secrets, service account and PVC template
       env:
-        GCS_SERVICE_ACCOUNT_KEY: ${{ inputs.gcs-service-account-key }}
-        GHCR_TOKEN: ${{ inputs.ghcr-token }}
+        GCS_SERVICE_ACCOUNT_KEY: ${{ inputs.gcs_service_account_key }}
+        GHCR_TOKEN: ${{ inputs.ghcr_token }}
         IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
       run: |
         set -euo pipefail
