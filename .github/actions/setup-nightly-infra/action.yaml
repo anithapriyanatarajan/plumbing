@@ -1,0 +1,143 @@
+---
+name: Tekton Nightly Build Infra
+description: |
+  Sets up Tekton nightly build infrastructure.
+  
+  Required secrets:
+    - GCS_SERVICE_ACCOUNT_KEY: GCP service account key for release bucket access
+    - GHCR_TOKEN: GitHub Container Registry token for image publishing
+inputs:
+  kubernetes_version:
+    description: 'Kubernetes version to test with'
+    required: false
+    default: 'v1.33.x'
+  image_registry_user:
+    description: 'Image registry user'
+    required: false
+    default: 'tekton-robot'
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Kind cluster
+      uses: chainguard-dev/actions/setup-kind@v1.4.12
+      with:
+        k8s-version: ${{ inputs.kubernetes_version }}
+
+    - name: Set up Tekton
+      uses: tektoncd/actions/setup-tektoncd@main
+      with:
+        pipeline_version: latest
+        setup_registry: "true"
+        patch_etc_hosts: "true"
+
+    - name: Install tkn CLI
+      uses: tektoncd/actions/setup-tektoncd-cli@main
+      with:
+        version: latest
+        
+    - name: Configure Tekton Git Resolver
+      env:
+        GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
+      run: |
+        set -euo pipefail
+        kubectl create secret generic git-resolver-secret \
+          --from-literal=token="${GITHUB_TOKEN}" \
+          -n tekton-pipelines-resolvers || true
+        kubectl annotate secret git-resolver-secret \
+          tekton.dev/git-0=github.com \
+          -n tekton-pipelines-resolvers || true
+        kubectl create secret generic git-resolver-secret \
+          --from-literal=token="${GITHUB_TOKEN}" \
+          -n default || true
+        kubectl annotate secret git-resolver-secret \
+          tekton.dev/git-0=github.com \
+          -n default || true
+        kubectl patch configmap git-resolver-config -n tekton-pipelines-resolvers --patch='
+        data:
+          api-token-secret-name: "git-resolver-secret"
+          api-token-secret-key: "token"
+        ' || true
+        kubectl patch configmap feature-flags -n tekton-pipelines --patch='
+        data:
+          enable-cel-in-whenexpression: "true"
+        ' || true
+      shell: bash
+
+    - name: Create secrets, service account and PVC template
+      env:
+        GCS_SERVICE_ACCOUNT_KEY: ${{ secrets.GCS_SERVICE_ACCOUNT_KEY }}
+        GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
+        IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
+      run: |
+        set -euo pipefail
+        trap 'rm -f /tmp/gcs-key.json /tmp/docker-config.json' EXIT
+        # Create GCS service account secret for release bucket access
+        echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
+        kubectl create secret generic release-secret \
+          --from-file=release.json=/tmp/gcs-key.json
+        # Create a Kubernetes secret for GHCR authentication.
+        echo "${GHCR_TOKEN}" > /tmp/docker-config.json
+        kubectl create secret generic release-images-secret \
+          --from-file=docker-config.json=/tmp/docker-config.json
+        cat > workspace-template.yaml << EOF
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+        EOF
+      shell: bash
+
+    - name: Apply ServiceAccount, RBAC, and related resources
+      run: |
+        set -euo pipefail
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: release-right-meow
+        secrets:
+        - name: release-secret
+        - name: git-resolver-secret
+        - name: release-images-secret
+        ---
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: kube-api-secret
+          annotations:
+            kubernetes.io/service-account.name: release-right-meow
+        type: kubernetes.io/service-account-token
+        ---
+        kind: Role
+        apiVersion: rbac.authorization.k8s.io/v1
+        metadata:
+          name: pipeline-role
+        rules:
+        - apiGroups: [""]
+          resources: ["services", "configmaps", "secrets"]
+          verbs: ["get", "create", "update", "patch", "list"]
+        - apiGroups: ["apps"]
+          resources: ["deployments"]
+          verbs: ["get", "create", "update", "patch", "list"]
+        - apiGroups: ["tekton.dev"]
+          resources: ["pipelines", "pipelineruns", "tasks", "taskruns"]
+          verbs: ["get", "create", "update", "patch", "list"]
+        - apiGroups: [""]
+          resources: ["pods", "pods/log"]
+          verbs: ["get", "list"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: pipeline-role-binding
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: pipeline-role
+        subjects:
+        - kind: ServiceAccount
+          name: release-right-meow
+        EOF
+      shell: bash
