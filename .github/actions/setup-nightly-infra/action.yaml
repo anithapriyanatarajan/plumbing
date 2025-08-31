@@ -159,12 +159,12 @@ runs:
             "artifacts.oci.signer": "x509",
             "signers.x509.fulcio.enabled": "true",
             "signers.x509.fulcio.address": "https://fulcio.sigstore.dev",
-            "signers.x509.fulcio.issuer": "https://oauth2.sigstore.dev/auth",
-            "signers.x509.fulcio.provider":"github",
+            "signers.x509.fulcio.issuer": "https://token.actions.githubusercontent.com",
             "transparency.enabled": "true",
             "transparency.url": "https://rekor.sigstore.dev"
           }
         }'
+        kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
     - name: Wait for Tekton Chains pod to be ready
@@ -191,6 +191,32 @@ runs:
         kubectl wait --for=condition=ready pod -l app=tekton-chains-controller -n tekton-chains --timeout=300s
         echo "Tekton Chains controller restarted with debug logging!"
       shell: bash
+    
+    - name: Mint GitHub OIDC token and inject into cluster
+      run: |
+        echo "Requesting GitHub OIDC token..."
+        token=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sigstore" | jq -r .value)
+
+        echo "::add-mask::$token"
+        kubectl create secret generic github-oidc-token \
+          -n tekton-pipelines \
+          --from-literal=oidc-token="$token" \
+          --dry-run=client -o yaml | kubectl apply -f -
+      shell: bash
+
+    - name: Patch chains-controller to use GitHub OIDC token
+      shell: bash
+      run: |
+        kubectl patch deployment tekton-chains-controller -n tekton-pipelines --type='json' -p='[
+          {
+            "op": "replace",
+            "path": "/spec/template/spec/volumes/1",
+            "value": { "name": "oidc-info", "secret": { "secretName": "github-oidc-token" } }
+          }
+        ]'
+        kubectl rollout status deployment tekton-chains-controller -n tekton-pipelines --timeout=120s
+
 
     - name: Apply echo image Task, Pipeline, and PipelineRun
       env:
