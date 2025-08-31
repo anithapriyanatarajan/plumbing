@@ -166,6 +166,14 @@ runs:
         }'
       shell: bash
 
+    - name: Wait for Tekton Chains pod to be ready
+      run: |
+        set -euo pipefail
+        echo "Waiting for Tekton Chains controller to be ready..."
+        kubectl wait --for=condition=ready pod -l app=tekton-chains-controller -n tekton-chains --timeout=300s
+        echo "Tekton Chains is ready!"
+      shell: bash
+
     - name: Apply echo image Task, Pipeline, and PipelineRun
       env:
         GHCR_TOKEN: ${{ inputs.ghcr_token }}
