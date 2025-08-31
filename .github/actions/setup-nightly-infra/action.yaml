@@ -158,7 +158,8 @@ runs:
             "artifacts.oci.signer": "x509",
             "signers.x509.fulcio.enabled": "true",
             "signers.x509.fulcio.address": "https://fulcio.sigstore.dev",
-            "signers.x509.fulcio.issuer": "https://github.com/login/oauth",
+            "signers.x509.fulcio.issuer": "https://token.actions.githubusercontent.com",
+            "signers.x509.fulcio.provider":"github-workflow",
             "transparency.enabled": "true",
             "transparency.url": "https://rekor.sigstore.dev"
           }
