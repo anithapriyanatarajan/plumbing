@@ -39,7 +39,7 @@ runs:
         
     - name: Configure Tekton Git Resolver
       env:
-        GITHUB_TOKEN: ${{ inputs.ghcr-token }}
+        GITHUB_TOKEN: ${{ inputs.ghcr_token }}
       run: |
         set -euo pipefail
         kubectl create secret generic git-resolver-secret \
@@ -167,6 +167,8 @@ runs:
       shell: bash
 
     - name: Apply echo image Task, Pipeline, and PipelineRun
+      env:
+        GHCR_TOKEN: ${{ inputs.ghcr_token }}
       run: |
         set -euo pipefail
         cat <<EOF | kubectl apply -f -
@@ -252,7 +254,7 @@ runs:
         export SERVICE_ACCOUNT_NAME=default
         export NAMESPACE=default
         export REGISTRY=ghcr.io/anithapriyanatarajan
-        docker login $REGISTRY -u $IMAGE_REGISTRY_USER -p $GHCR_TOKEN
+        docker login $REGISTRY -u anithapriyanatarajan -p $GHCR_TOKEN
         export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
         kubectl create secret generic image-pull-secret-sample --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson -n $NAMESPACE
         echo -e "imagePullSecrets:\n  - name: image-pull-secret-sample" > pod-template.yaml
@@ -261,4 +263,6 @@ runs:
         kubectl apply -f https://raw.githubusercontent.com/tektoncd/chains/refs/heads/main/examples/kaniko/kaniko.yaml
         TASKRUN_NAME=$(tkn task start --param IMAGE=$REGISTRY/kaniko-chains --use-param-defaults --workspace name=source,emptyDir="" --workspace name=dockerconfig,secret=$DOCKERCONFIG_SECRET_NAME kaniko-chains --pod-template pod-template.yaml --output name)
         tkn taskrun logs "${TASKRUN_NAME}" -f
+
+        kubectl logs deploy/tekton-chains-controller -n tekton-chains
       shell: bash
