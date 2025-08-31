@@ -184,12 +184,23 @@ runs:
             env:
             - name: DOCKER_CONFIG
               value: /tekton/home/.docker/
+            command:
+            - /kaniko/executor
+            args:
+            - --dockerfile=/tekton/workspace/source/Dockerfile
+            - --context=/tekton/workspace/source
+            - --destination=\$(params.IMAGE)
+          - name: create-dockerfile
+            image: alpine:3.19
             script: |
-              echo 'FROM alpine:3.19' > Dockerfile
-              echo 'CMD echo "Hello from my simple container!"' >> Dockerfile
-              /kaniko/executor --dockerfile=Dockerfile --context=. --destination=\$(params.IMAGE)
+              #!/bin/sh
+              cat > /tekton/workspace/source/Dockerfile << 'EOF'
+              FROM alpine:3.19
+              CMD echo "Hello from my simple container!"
+              EOF
           workspaces:
           - name: dockerconfig
+          - name: source
         ---
         apiVersion: tekton.dev/v1
         kind: Pipeline
@@ -201,6 +212,7 @@ runs:
             type: string
           workspaces:
           - name: dockerconfig
+          - name: source
           tasks:
           - name: build-and-push
             taskRef:
@@ -211,6 +223,8 @@ runs:
             workspaces:
             - name: dockerconfig
               workspace: dockerconfig
+            - name: source
+              workspace: source
         ---
         apiVersion: tekton.dev/v1
         kind: PipelineRun
@@ -226,6 +240,14 @@ runs:
           - name: dockerconfig
             secret:
               secretName: release-images-secret
+          - name: source
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
         EOF
         echo "Pipeline started: echo-image-build-run"
         tkn pipelinerun logs echo-image-build-run -f
