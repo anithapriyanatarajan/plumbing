@@ -158,7 +158,9 @@ runs:
             "artifacts.oci.signer": "x509",
             "signers.x509.fulcio.enabled": "true",
             "signers.x509.fulcio.address": "https://fulcio.sigstore.dev",
-            "signers.x509.fulcio.issuer": "https://token.actions.githubusercontent.com",
+            "signers.x509.fulcio.issuer": "https://oauth2.sigstore.dev/auth",
+            "signers.x509.fulcio.provider":"filesystem",
+            "signers.x509.identity.token.file": "/var/run/sigstore/cosign/oidc-token",
             "transparency.enabled": "true",
             "transparency.url": "https://rekor.sigstore.dev"
           }
