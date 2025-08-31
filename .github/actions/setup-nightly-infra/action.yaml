@@ -200,7 +200,7 @@ runs:
 
         echo "::add-mask::$token"
         kubectl create secret generic github-oidc-token \
-          -n tekton-pipelines \
+          -n tekton-chains \
           --from-literal=oidc-token="$token" \
           --dry-run=client -o yaml | kubectl apply -f -
       shell: bash
@@ -208,14 +208,14 @@ runs:
     - name: Patch chains-controller to use GitHub OIDC token
       shell: bash
       run: |
-        kubectl patch deployment tekton-chains-controller -n tekton-pipelines --type='json' -p='[
+        kubectl patch deployment tekton-chains-controller -n tekton-chains --type='json' -p='[
           {
             "op": "replace",
             "path": "/spec/template/spec/volumes/1",
             "value": { "name": "oidc-info", "secret": { "secretName": "github-oidc-token" } }
           }
         ]'
-        kubectl rollout status deployment tekton-chains-controller -n tekton-pipelines --timeout=120s
+        kubectl rollout status deployment tekton-chains-controller -n tekton-chains --timeout=120s
 
 
     - name: Apply echo image Task, Pipeline, and PipelineRun
