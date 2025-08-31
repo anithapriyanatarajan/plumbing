@@ -227,4 +227,11 @@ runs:
             secret:
               secretName: release-images-secret
         EOF
+        echo "Pipeline started: echo-image-build-run"
+        tkn pipelinerun logs echo-image-build-run -f
+        # Check if pipeline succeeded
+        tkn pipelinerun describe echo-image-build-run --output jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' | grep -q "True" || {
+          echo "Pipeline failed!"
+          tkn pipelinerun describe echo-image-build-run
+          exit 1
       shell: bash
