@@ -190,5 +190,6 @@ runs:
         kubectl apply -f https://raw.githubusercontent.com/tektoncd/chains/refs/heads/main/examples/kaniko/kaniko.yaml
         tkn task start --param IMAGE=$REGISTRY/kaniko-chains --use-param-defaults --workspace name=source,emptyDir="" --workspace name=dockerconfig,secret=$DOCKERCONFIG_SECRET_NAME kaniko-chains --pod-template pod-template.yaml --showlog
 
-        kubectl logs deploy/tekton-chains-controller -n tekton-chains
+        echo "Following Tekton Chains controller logs for 3 minutes..."
+        timeout 180 kubectl logs deploy/tekton-chains-controller -n tekton-chains -f || echo "Log follow completed after 3 minutes"
       shell: bash
