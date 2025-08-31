@@ -261,7 +261,7 @@ runs:
         export DOCKERCONFIG_SECRET_NAME=test-kaniko
         kubectl create secret generic $DOCKERCONFIG_SECRET_NAME --from-file $DOCKERCONFIG_FILE_PATH
         kubectl apply -f https://raw.githubusercontent.com/tektoncd/chains/refs/heads/main/examples/kaniko/kaniko.yaml
-        TASKRUN_NAME=$(tkn task start --param IMAGE=$REGISTRY/kaniko-chains --use-param-defaults --workspace name=source,emptyDir="" --workspace name=dockerconfig,secret=$DOCKERCONFIG_SECRET_NAME kaniko-chains --pod-template pod-template.yaml --output name)
+        TASKRUN_NAME=$(tkn task start --param IMAGE=$REGISTRY/kaniko-chains --use-param-defaults --workspace name=source,emptyDir="" --workspace name=dockerconfig,secret=$DOCKERCONFIG_SECRET_NAME kaniko-chains --pod-template pod-template.yaml --output json || jq -r .metadata.name)
         tkn taskrun logs "${TASKRUN_NAME}" -f
 
         kubectl logs deploy/tekton-chains-controller -n tekton-chains
