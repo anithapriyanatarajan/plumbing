@@ -179,86 +179,6 @@ runs:
         GHCR_TOKEN: ${{ inputs.ghcr_token }}
       run: |
         set -euo pipefail
-        cat <<EOF | kubectl apply -f -
-        apiVersion: tekton.dev/v1
-        kind: Task
-        metadata:
-          name: echo-image-build
-        spec:
-          params:
-          - name: IMAGE
-            type: string
-          steps:
-          - name: build
-            image: gcr.io/kaniko-project/executor:latest
-            env:
-            - name: DOCKER_CONFIG
-              value: /tekton/home/.docker/
-            command:
-            - /kaniko/executor
-            args:
-            - --dockerfile=/tekton/workspace/source/Dockerfile
-            - --context=/tekton/workspace/source
-            - --destination=\$(params.IMAGE)
-          - name: create-dockerfile
-            image: alpine:3.19
-            script: |
-              #!/bin/sh
-              cat > /tekton/workspace/source/Dockerfile << 'EOF'
-              FROM alpine:3.19
-              CMD echo "Hello from my simple container!"
-              EOF
-          workspaces:
-          - name: dockerconfig
-          - name: source
-        ---
-        apiVersion: tekton.dev/v1
-        kind: Pipeline
-        metadata:
-          name: simple-build-push
-        spec:
-          params:
-          - name: IMAGE
-            type: string
-          workspaces:
-          - name: dockerconfig
-          - name: source
-          tasks:
-          - name: build-and-push
-            taskRef:
-              name: echo-image-build
-            params:
-            - name: IMAGE
-              value: \$(params.IMAGE)
-            workspaces:
-            - name: dockerconfig
-              workspace: dockerconfig
-            - name: source
-              workspace: source
-        ---
-        apiVersion: tekton.dev/v1
-        kind: PipelineRun
-        metadata:
-          name: echo-image-build-run
-        spec:
-          pipelineRef:
-            name: simple-build-push
-          params:
-          - name: IMAGE
-            value: "ghcr.io/anithapriyanatarajan/echo-image:latest"
-          workspaces:
-          - name: dockerconfig
-            secret:
-              secretName: release-images-secret
-          - name: source
-            volumeClaimTemplate:
-              spec:
-                accessModes:
-                - ReadWriteOnce
-                resources:
-                  requests:
-                    storage: 1Gi
-        EOF
         export SERVICE_ACCOUNT_NAME=default
         export NAMESPACE=default
         export REGISTRY=ghcr.io/anithapriyanatarajan
@@ -269,7 +189,7 @@ runs:
         export DOCKERCONFIG_SECRET_NAME=test-kaniko
         kubectl create secret generic $DOCKERCONFIG_SECRET_NAME --from-file $DOCKERCONFIG_FILE_PATH
         kubectl apply -f https://raw.githubusercontent.com/tektoncd/chains/refs/heads/main/examples/kaniko/kaniko.yaml
-        tkn task start --param IMAGE=$REGISTRY/kaniko-chains --use-param-defaults --workspace name=source,emptyDir="" --workspace name=dockerconfig,secret=$DOCKERCONFIG_SECRET_NAME kaniko-chains --pod-template pod-template.yaml
+        tkn task start --param IMAGE=$REGISTRY/kaniko-chains --use-param-defaults --workspace name=source,emptyDir="" --workspace name=dockerconfig,secret=$DOCKERCONFIG_SECRET_NAME kaniko-chains --pod-template pod-template.yaml --showlog
 
         kubectl logs deploy/tekton-chains-controller -n tekton-chains
       shell: bash
