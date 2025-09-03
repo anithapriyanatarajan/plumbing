@@ -20,6 +20,11 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
     - name: Set up Kind cluster
       uses: chainguard-dev/actions/setup-kind@v1.4.12
       with:
@@ -250,9 +255,3 @@ runs:
         echo "♻️ Background token refresher running..."
 
         kubectl get secret github-oidc-token -n tekton-chains -o jsonpath='{.data.oidc-token}'
-
-    - name: Checkout repository
-      uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
-        
