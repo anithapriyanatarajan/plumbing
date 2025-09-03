@@ -230,7 +230,7 @@ runs:
         kubectl wait --for=condition=ready pod -l app=tekton-chains-controller -n tekton-chains --timeout=300s
         echo "Tekton Chains controller restarted with debug logging!"
       shell: bash
-    
+
     # Step 10: Set up OIDC token management for Sigstore integration
     - name: Mint & continuously refresh GitHub OIDC token in cluster
       shell: bash
@@ -330,7 +330,7 @@ runs:
     #    timeout 180 kubectl logs deploy/tekton-chains-controller -n tekton-chains -f || echo "Log follow completed after 3 minutes"
     #  shell: bash
 
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
