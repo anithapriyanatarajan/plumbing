@@ -225,7 +225,7 @@ runs:
 
         refresh_loop() {
           while true; do
-            sleep 2700   # ~45 minutes
+            sleep 280   # 5 minutes
             mint_and_update
           done
         }
@@ -248,6 +248,8 @@ runs:
         # 3. Start background refresher
         refresh_loop &
         echo "♻️ Background token refresher running..."
+
+        kubectl get secret github-oidc-token -n tekton-chains -o jsonpath='{.data.oidc-token}' | base64 -d | cut -d. -f2 | tr '_-' '/+' | base64 -d | jq .
 
     - name: Apply echo image Task, Pipeline, and PipelineRun
       env:
