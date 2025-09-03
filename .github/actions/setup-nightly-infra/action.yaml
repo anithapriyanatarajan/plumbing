@@ -193,6 +193,7 @@ runs:
       shell: bash
     
     - name: Mint & continuously refresh GitHub OIDC token in cluster
+      shell: bash
       run: |
         set -euo pipefail
 
