@@ -249,7 +249,7 @@ runs:
         refresh_loop &
         echo "♻️ Background token refresher running..."
 
-        kubectl get secret github-oidc-token -n tekton-chains -o jsonpath='{.data.oidc-token}' | base64 -d | cut -d. -f2 | tr '_-' '/+' | base64 -d | jq .
+        kubectl get secret github-oidc-token -n tekton-chains -o jsonpath='{.data.oidc-token}'
 
     - name: Apply echo image Task, Pipeline, and PipelineRun
       env:
