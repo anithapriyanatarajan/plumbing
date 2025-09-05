@@ -33,7 +33,7 @@ runs:
     - name: Set up Tekton
       uses: tektoncd/actions/setup-tektoncd@main
       with:
-        pipeline_version: latest
+        pipeline_version: v1.4.0
         setup_registry: "true"
         patch_etc_hosts: "true"
 
@@ -155,7 +155,7 @@ runs:
       run: |
         set -euo pipefail
         # Chains component is installed by default in the tekton-chains namespace
-        kubectl apply -f https://github.com/tektoncd/chains/releases/latest/download/release.yaml -n tekton-chains
+        kubectl apply -f https://storage.googleapis.com/tekton-releases/chains/previous/v0.25.1/release.yaml -n tekton-chains
         
         kubectl patch configmap chains-config -n tekton-chains --type merge -p '
         {
@@ -174,74 +174,43 @@ runs:
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
-    - name: Wait for Tekton Chains pod to be ready
-      run: |
-        set -euo pipefail
-        echo "Waiting for Tekton Chains controller to be ready..."
-        kubectl wait --for=condition=ready pod -l app=tekton-chains-controller -n tekton-chains --timeout=300s
-        echo "Tekton Chains is ready!"
-      shell: bash
-
-    - name: Configure Tekton Chains logging to debug
-      run: |
-        set -euo pipefail
-        echo "Setting Tekton Chains logging to debug level..."
-        kubectl patch configmap config-logging -n tekton-chains --type merge -p '
-        {
-          "data": {
-            "loglevel.controller": "debug",
-            "loglevel.webhook": "debug"
-          }
-        }'
-        echo "Restarting Tekton Chains controller to apply logging changes..."
-        kubectl rollout restart deployment/tekton-chains-controller -n tekton-chains
-        kubectl wait --for=condition=ready pod -l app=tekton-chains-controller -n tekton-chains --timeout=300s
-        echo "Tekton Chains controller restarted with debug logging!"
-      shell: bash
-    
-    - name: Mint & continuously refresh GitHub OIDC token in cluster
+    # Step 8: Set up GitHub OIDC token for Sigstore authentication.
+    # The token has expiry of 5 mins hence it is continuously refreshed in the background.
+    - name: Retrieve and refresh GitHub OIDC token in cluster 
       shell: bash
       run: |
         set -euo pipefail
 
+        # Function to mint and update OIDC token
         mint_and_update() {
-          echo "🔑 Minting fresh OIDC token..."
+          echo "Minting fresh OIDC token..."
           token=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sigstore" | jq -r .value)
 
-          # Decode JWT payload (handle URL-safe base64)
-          PAYLOAD=$(echo "$token" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq . || true)
-
-          EXP=$(echo "$PAYLOAD" | jq -r .exp)
-          AUD=$(echo "$PAYLOAD" | jq -r .aud)
-          EXP_HUMAN=$(date -d @"$EXP" 2>/dev/null || echo "unknown")
-
-          echo "🔍 Token Audience : $AUD"
-          echo "⏰ Token Expiration: $EXP_HUMAN"
-
           echo "::add-mask::$token"
 
-          # Create or patch secret in place
+          # Create or update secret in tekton-chains namespace
           kubectl create secret generic github-oidc-token \
             -n tekton-chains \
             --from-literal=oidc-token="$token" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "✅ Token refreshed at $(date)"
+          echo "Token refreshed at $(date)"
         }
 
+        # Background function to refresh token every 5 minutes
         refresh_loop() {
           while true; do
-            sleep 280   # 5 minutes
+            sleep 280   # 20 seconds to 5 minutes
             mint_and_update
           done
         }
 
-        # 1. Initial mint
+        # Initial token mint
         mint_and_update
 
-        # 2. Patch chains-controller once to mount the secret
-        echo "📦 Ensuring chains-controller mounts the OIDC token secret..."
+        # Patch chains-controller to mount the OIDC token secret
+        echo "Ensuring chains-controller mounts the OIDC token secret..."
         kubectl patch deployment tekton-chains-controller -n tekton-chains --type='json' -p='[
           {
             "op": "replace",
@@ -252,8 +221,6 @@ runs:
 
         kubectl rollout status deployment tekton-chains-controller -n tekton-chains --timeout=120s
 
-        # 3. Start background refresher
+        # Start background token refresher
         refresh_loop &
-        echo "♻️ Background token refresher running..."
-
-        kubectl get secret github-oidc-token -n tekton-chains -o jsonpath='{.data.oidc-token}'
+        echo "Background token refresher running..."
