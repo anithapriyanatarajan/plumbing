@@ -70,6 +70,7 @@ runs:
         ' || true
       shell: bash
 
+    # Step 5: Create required secrets and PVC template
     - name: Create secrets, service account and PVC template
       env:
         GCS_SERVICE_ACCOUNT_KEY: ${{ inputs.gcs_service_account_key }}
@@ -77,15 +78,16 @@ runs:
         IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
       run: |
         set -euo pipefail
-        trap 'rm -f /tmp/gcs-key.json /tmp/docker-config.json' EXIT
+        trap 'rm -f /tmp/gcs-key.json /tmp/credentials' EXIT
         # Create GCS service account secret for release bucket access
         echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
         kubectl create secret generic release-secret \
           --from-file=release.json=/tmp/gcs-key.json
-        # Create a Kubernetes secret for GHCR authentication.
-        echo "${GHCR_TOKEN}" > /tmp/docker-config.json
-        kubectl create secret generic release-images-secret \
-          --from-file=docker-config.json=/tmp/docker-config.json
+        # Create Kubernetes secret for GHCR authentication
+        echo "${GHCR_TOKEN}" > /tmp/credentials
+        kubectl create secret generic ghcr-creds \
+          --from-file=credentials=/tmp/credentials
+        # Create PVC template for persistent storage
         cat > workspace-template.yaml << EOF
         spec:
           accessModes:
