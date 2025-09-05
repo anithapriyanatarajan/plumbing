@@ -109,7 +109,7 @@ runs:
         secrets:
         - name: release-secret
         - name: git-resolver-secret
-        - name: release-images-secret
+        - name: ghcr-creds
         ---
         apiVersion: v1
         kind: Secret
