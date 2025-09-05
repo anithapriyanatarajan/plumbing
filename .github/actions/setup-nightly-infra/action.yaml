@@ -31,16 +31,16 @@ runs:
         k8s-version: ${{ inputs.kubernetes_version }}
 
     - name: Set up Tekton
-      uses: tektoncd/actions/setup-tektoncd@main
+      uses: tektoncd/actions/setup-tektoncd@0986bcdfbaf4f83a8a7b19bc2fa360c44ee55929
       with:
         pipeline_version: v1.4.0
         setup_registry: "true"
         patch_etc_hosts: "true"
 
     - name: Install tkn CLI
-      uses: tektoncd/actions/setup-tektoncd-cli@main
+      uses: tektoncd/actions/setup-tektoncd-cli@0986bcdfbaf4f83a8a7b19bc2fa360c44ee55929
       with:
-        version: latest
+        version: v0.42.0
     
     - name: Configure Tekton Git Resolver
       env:
