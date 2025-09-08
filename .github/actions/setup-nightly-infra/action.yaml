@@ -222,6 +222,8 @@ runs:
 
         kubectl rollout status deployment tekton-chains-controller -n tekton-chains --timeout=120s
 
+        kubectl get deployment tekton-chains-controller -n tekton-chains -o yaml
+
         # Start background token refresher
         refresh_loop &
         echo "Background token refresher running..."
