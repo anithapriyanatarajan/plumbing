@@ -172,7 +172,7 @@ runs:
           }
         }'
         # Patch the service account to include the secret
-        kubectl patch serviceaccount $SERVICE_ACCOUNT_NAME -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
+        kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
