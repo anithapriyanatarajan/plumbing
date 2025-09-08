@@ -171,6 +171,7 @@ runs:
             "transparency.url": "https://rekor.sigstore.dev"
           }
         }'
+        kubectl patch serviceaccount tekton-chains-controller -n tekton-chains -p '{"imagePullSecrets": [{"name": "ghcr-creds"}]}'
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
