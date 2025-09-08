@@ -171,7 +171,7 @@ runs:
             "transparency.url": "https://rekor.sigstore.dev"
           }
         }'
-        kubectl patch serviceaccount tekton-chains-controller -n tekton-chains -p '{"imagePullSecrets": [{"name": "ghcr-creds"}]}'
+
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
@@ -211,17 +211,42 @@ runs:
         mint_and_update
 
         # Patch chains-controller to mount the OIDC token secret
-        echo "Ensuring chains-controller mounts the OIDC token secret..."
-        kubectl patch deployment tekton-chains-controller -n tekton-chains --type='json' -p='[
-          {
-            "op": "replace",
-            "path": "/spec/template/spec/volumes/1",
-            "value": { "name": "oidc-info", "secret": { "secretName": "github-oidc-token" } }
-          }
-        ]'
+        #echo "Ensuring chains-controller mounts the OIDC token secret..."
+        #kubectl patch deployment tekton-chains-controller -n tekton-chains --type='json' -p='[
+        #  {
+        #    "op": "replace",
+        #    "path": "/spec/template/spec/volumes/1",
+        #    "value": { "name": "oidc-info", "secret": { "secretName": "github-oidc-token" } }
+        #  }
+        #]'
 
-        kubectl rollout status deployment tekton-chains-controller -n tekton-chains --timeout=120s
+        #kubectl rollout status deployment tekton-chains-controller -n tekton-chains --timeout=120s
 
+        #kubectl get deployment tekton-chains-controller -n tekton-chains -o yaml
+
+        # Add ghcr-creds to tekton-chains-controller ServiceAccount without overwriting others
+        kubectl patch serviceaccount tekton-chains-controller \
+          -n tekton-chains \
+          --type='json' \
+          -p='[{"op":"add","path":"/imagePullSecrets/-","value":{"name":"ghcr-creds"}}]'
+
+        # Add github-oidc-token as a volume without replacing existing volumes
+        kubectl patch deployment tekton-chains-controller \
+          -n tekton-chains \
+          --type='json' \
+          -p='[{"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"oidc-info","secret":{"secretName":"github-oidc-token"}}}]'
+
+        # Add volume mount to controller container safely
+        kubectl patch deployment tekton-chains-controller \
+          -n tekton-chains \
+          --type='json' \
+          -p='[{"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"oidc-info","mountPath":"/var/run/secrets/tekton-chains/oidc","readOnly":true}}]'
+
+        # Restart deployment to apply changes
+        kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
+
+        # Verify patches applied
+        kubectl get sa tekton-chains-controller -n tekton-chains -o yaml
         kubectl get deployment tekton-chains-controller -n tekton-chains -o yaml
 
         # Start background token refresher
