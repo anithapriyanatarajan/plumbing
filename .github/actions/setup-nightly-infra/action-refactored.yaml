@@ -1,7 +1,7 @@
 ---
-name: Tekton Nightly Build Infra
+name: Tekton Nightly Build Infra (Refactored)
 description: |
-  Sets up Tekton nightly build infrastructure.
+  Sets up Tekton nightly build infrastructure (refactored for efficiency and maintainability).
 inputs:
   kubernetes_version:
     description: 'Kubernetes version to test with'
@@ -45,37 +45,8 @@ runs:
       uses: tektoncd/actions/setup-tektoncd-cli@0986bcdfbaf4f83a8a7b19bc2fa360c44ee55929
       with:
         version: v0.42.0
-    
-    - name: Configure Tekton Git Resolver
-      env:
-        GITHUB_TOKEN: ${{ inputs.ghcr_token }}
-      run: |
-        set -euo pipefail
-        kubectl create secret generic git-resolver-secret \
-          --from-literal=token="${GITHUB_TOKEN}" \
-          -n tekton-pipelines-resolvers || true
-        kubectl annotate secret git-resolver-secret \
-          tekton.dev/git-0=github.com \
-          -n tekton-pipelines-resolvers || true
-        kubectl create secret generic git-resolver-secret \
-          --from-literal=token="${GITHUB_TOKEN}" \
-          -n default || true
-        kubectl annotate secret git-resolver-secret \
-          tekton.dev/git-0=github.com \
-          -n default || true
-        kubectl patch configmap git-resolver-config -n tekton-pipelines-resolvers --patch='
-        data:
-          api-token-secret-name: "git-resolver-secret"
-          api-token-secret-key: "token"
-        ' || true
-        kubectl patch configmap feature-flags -n tekton-pipelines --patch='
-        data:
-          enable-cel-in-whenexpression: "true"
-        ' || true
-      shell: bash
 
-    # Step 5: Create required secrets and PVC template
-    - name: Create secrets, service account and PVC template
+    - name: Create and configure secrets
       env:
         GCS_SERVICE_ACCOUNT_KEY: ${{ inputs.gcs_service_account_key }}
         GHCR_TOKEN: ${{ inputs.ghcr_token }}
@@ -84,18 +55,31 @@ runs:
       run: |
         set -euo pipefail
         trap 'rm -f /tmp/gcs-key.json /tmp/credentials' EXIT
-        # Create GCS service account secret for release bucket access
-        echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
-        kubectl create secret generic release-secret \
-          --from-file=release.json=/tmp/gcs-key.json
-        # Create Kubernetes secret for GHCR authentication
-        echo "${GHCR_TOKEN}" > /tmp/credentials
-        kubectl create secret generic ghcr-creds \
-          --from-file=credentials=/tmp/credentials
-        
-        # Safe docker login and secret creation for GHCR
         echo "::add-mask::${GHCR_TOKEN}"
         echo "::add-mask::${IMAGE_REGISTRY_USER}"
+        # GCS secret
+        echo "${GCS_SERVICE_ACCOUNT_KEY}" > /tmp/gcs-key.json
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: release-secret
+        type: Opaque
+        data:
+          release.json: $(base64 -w0 /tmp/gcs-key.json)
+        EOF
+        # GHCR secret
+        echo "${GHCR_TOKEN}" > /tmp/credentials
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ghcr-creds
+        type: Opaque
+        data:
+          credentials: $(base64 -w0 /tmp/credentials)
+        EOF
+        # Docker login and registry secret
         if ! docker login -u="${IMAGE_REGISTRY_USER}" -p="${GHCR_TOKEN}" ${IMAGE_REGISTRY}; then
           echo "Docker login failed" >&2
           exit 1
@@ -105,9 +89,16 @@ runs:
           echo "Docker config not found at $DOCKERCONFIG_FILE_PATH" >&2
           exit 1
         fi
-        kubectl create secret generic docker-registry --from-file=.dockerconfigjson="$DOCKERCONFIG_FILE_PATH" --type=kubernetes.io/dockerconfigjson -n default || kubectl replace secret docker-registry --from-file=.dockerconfigjson="$DOCKERCONFIG_FILE_PATH" --type=kubernetes.io/dockerconfigjson -n default
-        
-        # Create PVC template for persistent storage
+        kubectl apply -f - <<EOF
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: docker-registry
+        type: kubernetes.io/dockerconfigjson
+        data:
+          .dockerconfigjson: $(base64 -w0 "$DOCKERCONFIG_FILE_PATH")
+        EOF
+        # PVC template
         cat > workspace-template.yaml << EOF
         spec:
           accessModes:
@@ -178,9 +169,7 @@ runs:
         IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
       run: |
         set -euo pipefail
-        # Chains component is installed by default in the tekton-chains namespace
         kubectl apply -f https://storage.googleapis.com/tekton-releases/chains/previous/v0.25.1/release.yaml -n tekton-chains
-        
         kubectl patch configmap chains-config -n tekton-chains --type merge -p '
         {
           "data": {
@@ -198,49 +187,34 @@ runs:
             "signers.x509.fulcio.address": "https://fulcio.sigstore.dev",
             "signers.x509.fulcio.issuer": "https://token.actions.githubusercontent.com",
             "transparency.enabled": "true",
-            "transparency.url": "https://rekor.sigstore.dev"
+            "transparency.url": "https://search.sigstore.dev"
           }
         }'
-
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
-    # Step 8: Set up GitHub OIDC token for Sigstore authentication.
-    # The token has expiry of 5 mins hence it is continuously refreshed in the background.
-    - name: Retrieve and refresh GitHub OIDC token in cluster 
+    - name: Retrieve and refresh GitHub OIDC token in cluster
       shell: bash
       run: |
         set -euo pipefail
-
-        # Function to mint and update OIDC token
         mint_and_update() {
           echo "Minting fresh OIDC token..."
           token=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sigstore" | jq -r .value)
-
           echo "::add-mask::$token"
-
-          # Create or update secret in tekton-chains namespace
           kubectl create secret generic github-oidc-token \
             -n tekton-chains \
             --from-literal=oidc-token="$token" \
             --dry-run=client -o yaml | kubectl apply -f -
-
           echo "Token refreshed at $(date)"
         }
-
-        # Background function to refresh token every 5 minutes
         refresh_loop() {
           while true; do
-            sleep 280   # 20 seconds to 5 minutes
+            sleep 280
             mint_and_update
           done
         }
-
-        # Initial token mint
         mint_and_update
-
-        # Patch chains-controller to mount the OIDC token secret
         echo "Ensuring chains-controller mounts the OIDC token secret..."
         kubectl patch deployment tekton-chains-controller -n tekton-chains --type='json' -p='[
           {
@@ -249,9 +223,6 @@ runs:
             "value": { "name": "oidc-info", "secret": { "secretName": "github-oidc-token" } }
           }
         ]'
-
         kubectl rollout status deployment tekton-chains-controller -n tekton-chains --timeout=120s
-
-        # Start background token refresher
         refresh_loop &
         echo "Background token refresher running..."
