@@ -188,11 +188,17 @@ runs:
             "artifacts.oci.format": "simplesigning",
             "artifacts.oci.storage": "oci",
             "artifacts.oci.signer": "x509",
+            "artifacts.taskrun.storage": "oci",
+            "artifacts.taskrun.signer": "x509", 
+            "artifacts.taskrun.format": "slsa/v1",
+            "artifacts.pipelinerun.storage": "oci",
+            "artifacts.pipelinerun.signer": "x509", 
+            "artifacts.pipelinerun.format": "slsa/v1",
             "signers.x509.fulcio.enabled": "true",
             "signers.x509.fulcio.address": "https://fulcio.sigstore.dev",
             "signers.x509.fulcio.issuer": "https://token.actions.githubusercontent.com",
             "transparency.enabled": "true",
-            "transparency.url": "https://rekor.sigstore.dev"
+            "transparency.url": "https://search.sigstore.dev"
           }
         }'
 
