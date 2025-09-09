@@ -98,9 +98,9 @@ runs:
         EOF
         docker login -u=${IMAGE_REGISTRY_USER} -p=${GHCR_TOKEN} ghcr.io/anithapriyanatarajan
         #Create and Patch a READ-WRITE secret to the serviceAccount that will be used by the TaskRun
-        export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
-        kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson
-        kubectl patch serviceaccount release-right-meow -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}"
+        #export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
+        #kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson
+        #kubectl patch serviceaccount release-right-meow -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}"
       shell: bash
 
     - name: Apply ServiceAccount, RBAC, and related resources
