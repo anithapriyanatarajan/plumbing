@@ -152,6 +152,9 @@ runs:
       shell: bash
 
     - name: Install Tekton Chains with Fulcio enabled
+      env:
+        GHCR_TOKEN: ${{ inputs.ghcr_token }}
+        IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
       run: |
         set -euo pipefail
         # Chains component is installed by default in the tekton-chains namespace
@@ -172,7 +175,32 @@ runs:
           }
         }'
         # Patch the service account to include the secret
-        kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
+        # kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
+       
+        # Create Docker config with GitHub token for ghcr.io
+        cat > $HOME/.docker/config.json <<EOF
+        {
+          "auths": {
+            "ghcr.io": {
+              "username": "${IMAGE_REGISTRY_USER}",
+              "password": "${GHCR_TOKEN}",
+              "auth": "$(echo -n '${IMAGE_REGISTRY_USER}:${GHCR_TOKEN}' | base64)"
+            }
+          }
+        }
+        EOF
+
+        # Create the Kubernetes secret
+        kubectl create secret generic chains-docker-config \
+          --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+          --type=kubernetes.io/dockerconfigjson \
+          -n tekton-chains
+
+        # Patch the service account to use the secret
+        kubectl patch serviceaccount $SERVICE_ACCOUNT_NAME \
+          -p "{\"secrets\": [{\"name\": \"chains-docker-config\"}]}" \
+          -n tekton-chains
+          
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
