@@ -177,30 +177,12 @@ runs:
         # Patch the service account to include the secret
         # kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
        
-        # Create Docker config with GitHub token for ghcr.io
-        cat > $HOME/.docker/config.json <<EOF
-        {
-          "auths": {
-            "ghcr.io": {
-              "username": "${IMAGE_REGISTRY_USER}",
-              "password": "${GHCR_TOKEN}",
-              "auth": "$(echo -n '${IMAGE_REGISTRY_USER}:${GHCR_TOKEN}' | base64)"
-            }
-          }
-        }
-        EOF
+        docker login -u='${IMAGE_REGISTRY_USER:}' -p='${GHCR_TOKEN}' ghcr.io
+        #Create and Patch a READ-WRITE secret to the serviceAccount that will be used by the TaskRun
+        export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
+        kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson -n tekton-chains
+        kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}" -n tekton-chains
 
-        # Create the Kubernetes secret
-        kubectl create secret generic chains-docker-config \
-          --from-file=.dockerconfigjson=$HOME/.docker/config.json \
-          --type=kubernetes.io/dockerconfigjson \
-          -n tekton-chains
-
-        # Patch the service account to use the secret
-        kubectl patch serviceaccount tekton-chains-controller \
-          -p "{\"secrets\": [{\"name\": \"chains-docker-config\"}]}" \
-          -n tekton-chains
-          
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
