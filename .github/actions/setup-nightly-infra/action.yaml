@@ -177,7 +177,7 @@ runs:
         # Patch the service account to include the secret
         # kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
        
-        docker login -u='${IMAGE_REGISTRY_USER:}' -p='${GHCR_TOKEN}' ghcr.io
+        docker login -u='${IMAGE_REGISTRY_USER}' -p='${GHCR_TOKEN}' ghcr.io
         #Create and Patch a READ-WRITE secret to the serviceAccount that will be used by the TaskRun
         export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
         kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson -n tekton-chains
