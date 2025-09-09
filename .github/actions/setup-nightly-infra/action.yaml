@@ -197,7 +197,7 @@ runs:
           -n tekton-chains
 
         # Patch the service account to use the secret
-        kubectl patch serviceaccount $SERVICE_ACCOUNT_NAME \
+        kubectl patch serviceaccount tekton-chains-controller \
           -p "{\"secrets\": [{\"name\": \"chains-docker-config\"}]}" \
           -n tekton-chains
           
