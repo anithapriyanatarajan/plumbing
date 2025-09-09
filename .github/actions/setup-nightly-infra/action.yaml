@@ -7,6 +7,10 @@ inputs:
     description: 'Kubernetes version to test with'
     required: false
     default: 'v1.33.x'
+  image_registry:
+    description: 'Image registry'
+    required: false
+    default: 'ghcr.io'
   image_registry_user:
     description: 'Image registry user'
     required: false
@@ -76,6 +80,7 @@ runs:
         GCS_SERVICE_ACCOUNT_KEY: ${{ inputs.gcs_service_account_key }}
         GHCR_TOKEN: ${{ inputs.ghcr_token }}
         IMAGE_REGISTRY_USER: ${{ inputs.image_registry_user }}
+        IMAGE_REGISTRY: ${{ inputs.image_registry }}
       run: |
         set -euo pipefail
         trap 'rm -f /tmp/gcs-key.json /tmp/credentials' EXIT
@@ -87,6 +92,21 @@ runs:
         echo "${GHCR_TOKEN}" > /tmp/credentials
         kubectl create secret generic ghcr-creds \
           --from-file=credentials=/tmp/credentials
+        
+        # Safe docker login and secret creation for GHCR
+        echo "::add-mask::${GHCR_TOKEN}"
+        echo "::add-mask::${IMAGE_REGISTRY_USER}"
+        if ! docker login -u="${IMAGE_REGISTRY_USER}" -p="${GHCR_TOKEN}" ${IMAGE_REGISTRY}; then
+          echo "Docker login failed" >&2
+          exit 1
+        fi
+        export DOCKERCONFIG_FILE_PATH="$HOME/.docker/config.json"
+        if [ ! -f "$DOCKERCONFIG_FILE_PATH" ]; then
+          echo "Docker config not found at $DOCKERCONFIG_FILE_PATH" >&2
+          exit 1
+        fi
+        kubectl create secret generic docker-registry --from-file=.dockerconfigjson="$DOCKERCONFIG_FILE_PATH" --type=kubernetes.io/dockerconfigjson -n default || kubectl replace secret docker-registry --from-file=.dockerconfigjson="$DOCKERCONFIG_FILE_PATH" --type=kubernetes.io/dockerconfigjson -n default
+        
         # Create PVC template for persistent storage
         cat > workspace-template.yaml << EOF
         spec:
@@ -96,11 +116,6 @@ runs:
             requests:
               storage: 1Gi
         EOF
-        docker login -u=${IMAGE_REGISTRY_USER} -p=${GHCR_TOKEN} ghcr.io/anithapriyanatarajan
-        #Create and Patch a READ-WRITE secret to the serviceAccount that will be used by the TaskRun
-        #export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
-        #kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson
-        #kubectl patch serviceaccount release-right-meow -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}"
       shell: bash
 
     - name: Apply ServiceAccount, RBAC, and related resources
@@ -115,6 +130,7 @@ runs:
         - name: release-secret
         - name: git-resolver-secret
         - name: ghcr-creds
+        - name: docker-registry
         ---
         apiVersion: v1
         kind: Secret
@@ -179,18 +195,7 @@ runs:
             "transparency.url": "https://rekor.sigstore.dev"
           }
         }'
-        # Patch the service account to include the secret
-        # kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"ghcr-creds\"}]}" -n tekton-chains
 
-        docker login -u=${IMAGE_REGISTRY_USER} -p=${GHCR_TOKEN} ghcr.io/anithapriyanatarajan
-        #Create and Patch a READ-WRITE secret to the serviceAccount that will be used by the TaskRun
-        export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
-        #kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson -n tekton-chains
-        #kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}" -n tekton-chains
-
-        kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson
-        kubectl patch serviceaccount release-right-meow -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}"
-        
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
