@@ -182,7 +182,7 @@ runs:
         export DOCKERCONFIG_FILE_PATH=$HOME/.docker/config.json
         kubectl create secret generic docker-registry --from-file=.dockerconfigjson=$DOCKERCONFIG_FILE_PATH --type=kubernetes.io/dockerconfigjson -n tekton-chains
         kubectl patch serviceaccount tekton-chains-controller -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}" -n tekton-chains
-
+        kubectl patch serviceaccount release-right-meow -p "{\"secrets\": [{\"name\": \"docker-registry\"}]}"
         kubectl rollout restart deployment tekton-chains-controller -n tekton-chains
       shell: bash
 
