@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-apiVersion: tekton.dev/v1beta1
+apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: prerelease-checks
@@ -24,7 +24,10 @@ spec:
     description: The X.Y.Z version that the artifacts would be tagged with
   - name: releaseBucket
     description: >-
-      The bucket where to look for the release, in the format gs://<bucket-name>/<project-name>
+      The bucket where to look for the release, in the format <bucket-name>/<project-name>
+  - name: ociNamespace
+    description: The Oracle Cloud Infrastructure namespace for the bucket
+    default: ""
   stepTemplate:
     env:
     - name: PACKAGE
@@ -33,6 +36,8 @@ spec:
       value: $(params.versionTag)
     - name: RELEASE_BUCKET
       value: $(params.releaseBucket)
+    - name: OCI_NAMESPACE
+      value: $(params.ociNamespace)
   workspaces:
     - name: source-to-release
       description: The workspace where the repo has been cloned
@@ -48,16 +53,22 @@ spec:
         echo "Version ${VERSION_TAG} already tagged for ${PACKAGE}"
         exit 1
     - name: check-release-file
-      image: gcr.io/google.com/cloudsdktool/cloud-sdk:310.0.0@sha256:cb03669fcdb9191d55a6200f2911fff3baec0b8c39b156d95b68aabe975ac506
+      image: ghcr.io/oracle/oci-cli:sha-b324bd6  # released 2025-10-01
       script: |
         echo "Checking release file"
-        # Check if the release file already exists
-        # gsutil retuns 1 if the object was not found
-        if gsutil stat ${RELEASE_BUCKET}/previous/${VERSION_TAG}/release.yaml; then
-          echo "Release file already exists for $(params.versionTag) in the release bucket,"
+        # Check if the release file already exists in Oracle Cloud Storage
+        # Extract bucket name and namespace from RELEASE_BUCKET
+        BUCKET_NAME=$(echo ${RELEASE_BUCKET} | awk -F'/' '{print $1}')
+        OBJECT_PATH=$(echo ${RELEASE_BUCKET} | cut -d'/' -f2-)/previous/${VERSION_TAG}/release.yaml
+        
+        # Check if object exists using OCI CLI
+        # oci os object head returns 0 if object exists, non-zero if not found
+        if oci os object head --bucket-name "${BUCKET_NAME}" --name "${OBJECT_PATH}" --namespace-name ${OCI_NAMESPACE} 2>/dev/null; then
+          echo "Release file already exists for ${VERSION_TAG} in the release bucket,"
           echo "but no git tag was found. To continue remove the release file first."
           exit 1
         fi
+        echo "Release file does not exist. Check passed."
     - name: check-github-release
       image: python:3.6-alpine3.9
       script: |

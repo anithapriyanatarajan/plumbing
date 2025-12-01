@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-apiVersion: tekton.dev/v1beta1
+apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: create-draft-release
@@ -283,7 +283,7 @@ spec:
           --commitish ${GIT_REVISION} ${RELEASE_FILES} \
           --file $HOME/release.md ${VERSION}
 ---
-apiVersion: tekton.dev/v1beta1
+apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: release-draft
@@ -300,14 +300,16 @@ spec:
   - name: previous-release-tag
     description: Previous release number - for author and PR list calculation
   - name: bucket
-    description: GCS bucket where to get the release files from (e.g. gs://tekton-releases/pipeline)
+    description: Oracle Cloud Storage bucket where to get the release files from (e.g. tekton-releases/pipeline)
+  - name: ociNamespace
+    description: The Oracle Cloud Infrastructure namespace for the bucket
   - name: rekor-uuid
     description: The Rekor UUID associated to the attestation
   workspaces:
     - name: shared
       description: Workspace where the git repo is prepared for testing
     - name: credentials
-      description: GCS credentials
+      description: Oracle Cloud Infrastructure credentials
   tasks:
     - name: clone-repo
       taskRef:
@@ -333,18 +335,18 @@ spec:
         resolver: bundles
         params:
           - name: bundle
-            value: ghcr.io/tektoncd/catalog/upstream/tasks/gcs-download:0.1
+            value: ghcr.io/tektoncd/catalog/upstream/tasks/oracle-cloud-storage-download:0.2
           - name: name
-            value: gcs-download
+            value: oracle-cloud-storage-download
           - name: kind
             value: task
       params:
-        - name: path
-          value: .
-        - name: location
-          value: $(params.bucket)/previous/$(params.release-tag)
-        - name: typeDir
-          value: "true"
+        - name: namespace
+          value: $(params.ociNamespace)
+        - name: bucketName
+          value: $(params.bucket)
+        - name: objectName
+          value: previous/$(params.release-tag)
       workspaces:
         - name: output
           workspace: shared
